@@ -42,11 +42,11 @@ let users = buildUsers();
 
 // ─── Cache ───────────────────────────────────────────────────────────────────
 const cache = new Map();
-const CACHE_TTL = 10 * 1000;
+const CACHE_TTL = (parseInt(process.env.CACHE_TTL_SECONDS) || 10) * 1000;
 
 // ─── Logs ────────────────────────────────────────────────────────────────────
 const logs = [];
-const MAX_LOGS = 500;
+const MAX_LOGS = parseInt(process.env.MAX_LOGS) || 1000;
 
 function pushLog(entry) {
   logs.unshift(entry);

@@ -6,7 +6,9 @@ import {
   LineElement, Tooltip, Filler
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { Layers, LayoutDashboard, Terminal, Key, Download } from 'lucide-react';
+import { Layers, LayoutDashboard, Terminal, Key, Download, LogOut, Copy } from 'lucide-react';
+import { supabase } from './supabase';
+import { useNavigate } from 'react-router-dom';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
@@ -19,7 +21,32 @@ export default function App() {
   const [stats, setStats] = useState({ totalRequests: 0, totalErrors: 0, users: [], mostUsedMethods: [] });
   const [keys, setKeys] = useState([]);
   const [wsStatus, setWsStatus] = useState('connecting');
+  const [user, setUser] = useState(null);
+  const [userRecord, setUserRecord] = useState(null);
+  const [copied, setCopied] = useState(false);
   const wsRef = useRef(null);
+  const navigate = useNavigate();
+
+  // ── Auth guard ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) { navigate('/signup'); return; }
+      setUser(session.user);
+      supabase.from('users').select('*').eq('id', session.user.id).single()
+        .then(({ data }) => setUserRecord(data));
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/');
+  };
+
+  const copyKey = () => {
+    navigator.clipboard.writeText(userRecord?.api_key || '');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // ── WebSocket live feed ──────────────────────────────────────────────────
   useEffect(() => {
@@ -161,7 +188,30 @@ export default function App() {
               </button>
             ))}
           </nav>
-        </div>
+
+          {/* User info + logout */}
+          {userRecord && (
+            <div className="flex flex-col gap-3 pt-4 border-t border-border-subtle">
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Your API Key</p>
+                <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg">
+                  <span className="text-xs font-mono text-slate-300 truncate flex-1">{userRecord.api_key}</span>
+                  <button onClick={copyKey} className="shrink-0 text-slate-400 hover:text-white transition-colors">
+                    <Copy className="size-3.5" />
+                  </button>
+                </div>
+                {copied && <p className="text-[10px] text-emerald-400 text-center">Copied!</p>}
+                <span className={`text-[10px] font-bold text-center px-2 py-0.5 rounded mt-1 ${
+                  userRecord.tier === 'pro' ? 'bg-primary/20 text-primary' : 'bg-white/5 text-slate-400'
+                }`}>{userRecord.tier.toUpperCase()} TIER</span>
+              </div>
+              <button onClick={handleLogout}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors w-full">
+                <LogOut className="size-4" />
+                <span className="text-sm font-medium">Logout</span>
+              </button>
+            </div>
+          )}        </div>
       </aside>
 
       {/* Main */}

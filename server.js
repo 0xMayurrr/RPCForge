@@ -11,7 +11,7 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-app.use(cors({ origin: ["http://localhost:5173", "https://rpcforge.vercel.app"] }));
+app.use(cors({ origin: ["http://localhost:5173", "https://rpcforge.vercel.app", "https://rpc-forge.vercel.app"] }));
 app.use(express.json());
 
 // ─── Multi-chain nodes from .env ───────────────────────────────────────────

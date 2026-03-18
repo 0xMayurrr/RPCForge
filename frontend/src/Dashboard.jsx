@@ -11,6 +11,7 @@ import { Layers, LayoutDashboard, Terminal, Key, Download } from 'lucide-react';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
 const ADMIN = { headers: { 'x-admin-secret': 'admin123' } };
+const BASE_URL = 'https://rpcforge-production.up.railway.app';
 
 export default function App() {
   const [tab, setTab] = useState('dashboard');
@@ -23,7 +24,7 @@ export default function App() {
   // ── WebSocket live feed ──────────────────────────────────────────────────
   useEffect(() => {
     function connect() {
-      const ws = new WebSocket('ws://localhost:3000');
+      const ws = new WebSocket('wss://rpcforge-production.up.railway.app');
       wsRef.current = ws;
       ws.onopen = () => setWsStatus('live');
       ws.onclose = () => { setWsStatus('reconnecting'); setTimeout(connect, 3000); };
@@ -41,7 +42,7 @@ export default function App() {
   // ── Stats polling ────────────────────────────────────────────────────────
   useEffect(() => {
     const fetch = async () => {
-      try { const r = await axios.get('http://localhost:3000/stats', ADMIN); setStats(r.data); } catch {}
+      try { const r = await axios.get('https://rpcforge-production.up.railway.app/stats', ADMIN); setStats(r.data); } catch {}
     };
     fetch();
     const id = setInterval(fetch, 5000);
@@ -50,16 +51,16 @@ export default function App() {
 
   // ── Key manager ──────────────────────────────────────────────────────────
   const fetchKeys = async () => {
-    try { const r = await axios.get('http://localhost:3000/keys', ADMIN); setKeys(r.data); } catch {}
+    try { const r = await axios.get('https://rpcforge-production.up.railway.app/keys', ADMIN); setKeys(r.data); } catch {}
   };
   useEffect(() => { if (tab === 'keys') fetchKeys(); }, [tab]);
 
   const createKey = async (tier) => {
-    await axios.post('http://localhost:3000/keys', { tier }, ADMIN);
+    await axios.post('https://rpcforge-production.up.railway.app/keys', { tier }, ADMIN);
     fetchKeys();
   };
   const revokeKey = async (key) => {
-    await axios.delete(`http://localhost:3000/keys/${key}`, ADMIN);
+    await axios.delete(`https://rpcforge-production.up.railway.app/keys/${key}`, ADMIN);
     fetchKeys();
   };
 

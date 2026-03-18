@@ -4,7 +4,7 @@ import inquirer from 'inquirer';
 import ora from 'ora';
 import axios from 'axios';
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = 'https://rpcforge-production.up.railway.app';
 const CHAINS = ['eth', 'polygon', 'bsc', 'arbitrum', 'sepolia'];
 const ADMIN_SECRET = 'admin123';
 const ADMIN = { headers: { 'x-admin-secret': ADMIN_SECRET } };

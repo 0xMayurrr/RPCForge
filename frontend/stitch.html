@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Prism RPC | Engineering Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#6467f2",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#0a0a0f",
+                        "obsidian": "#11111e",
+                        "border-subtle": "rgba(100, 103, 242, 0.15)"
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-panel {
+            background: rgba(17, 17, 30, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(100, 103, 242, 0.1);
+        }
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: repeat(24, 1fr);
+            gap: 2px;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #323367; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased selection:bg-primary/30">
+<div class="flex h-screen overflow-hidden">
+<!-- Sidebar -->
+<aside class="w-64 border-r border-border-subtle bg-obsidian flex flex-col shrink-0">
+<div class="p-6 flex flex-col gap-8 h-full">
+<!-- Logo & Env -->
+<div class="flex flex-col gap-6">
+<div class="flex items-center gap-3">
+<div class="size-8 bg-primary rounded flex items-center justify-center text-white">
+<span class="material-symbols-outlined !text-xl">layers</span>
+</div>
+<h1 class="text-lg font-bold tracking-tight text-white">Prism RPC</h1>
+</div>
+<div class="flex flex-col gap-1.5">
+<p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Environment</p>
+<div class="relative group">
+<button class="w-full flex items-center justify-between px-3 py-2 bg-primary/10 border border-primary/20 rounded text-xs font-semibold text-primary">
+<span class="flex items-center gap-2">
+<span class="size-1.5 rounded-full bg-primary animate-pulse"></span>
+                                    Production
+                                </span>
+<span class="material-symbols-outlined !text-sm">unfold_more</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Nav -->
+<nav class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/10 text-primary transition-colors" href="#">
+<span class="material-symbols-outlined !text-[20px]">dashboard</span>
+<span class="text-sm font-medium">Overview</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined !text-[20px]">vpn_key</span>
+<span class="text-sm font-medium">API Keys</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined !text-[20px]">bar_chart</span>
+<span class="text-sm font-medium">Usage Metrics</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined !text-[20px]">terminal</span>
+<span class="text-sm font-medium">Network Logs</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined !text-[20px]">settings</span>
+<span class="text-sm font-medium">Project Settings</span>
+</a>
+</nav>
+<!-- Footer -->
+<div class="mt-auto pt-6 border-t border-border-subtle">
+<div class="p-3 bg-white/5 rounded-lg">
+<div class="flex justify-between items-center mb-2">
+<span class="text-[10px] text-slate-400">Node Credits</span>
+<span class="text-[10px] text-primary">82% used</span>
+</div>
+<div class="h-1 bg-slate-800 rounded-full overflow-hidden">
+<div class="h-full bg-primary" style="width: 82%"></div>
+</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 flex flex-col overflow-y-auto bg-background-dark custom-scrollbar">
+<!-- Top Bar -->
+<header class="h-16 border-b border-border-subtle bg-obsidian/50 backdrop-blur sticky top-0 z-50 px-8 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+<span class="size-2 bg-emerald-500 rounded-full"></span>
+<span class="text-[11px] font-bold text-emerald-500 uppercase tracking-tighter">System Operational</span>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<div class="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-500">
+<span class="material-symbols-outlined !text-lg">search</span>
+</div>
+<input class="bg-white/5 border border-border-subtle rounded-lg py-1.5 pl-10 pr-4 text-xs w-64 focus:ring-1 focus:ring-primary focus:border-primary transition-all text-white placeholder:text-slate-500" placeholder="⌘K Search commands..." type="text"/>
+</div>
+<div class="flex items-center gap-3 pl-6 border-l border-border-subtle">
+<button class="material-symbols-outlined text-slate-400 hover:text-white transition-colors">notifications</button>
+<div class="flex items-center gap-2">
+<div class="text-right">
+<p class="text-xs font-semibold text-white">Alex Chen</p>
+<p class="text-[10px] text-slate-500">Tier: Enterprise</p>
+</div>
+<div class="size-8 rounded-full bg-gradient-to-tr from-primary to-indigo-400 border border-white/20" data-alt="Abstract purple gradient user profile avatar"></div>
+</div>
+</div>
+</div>
+</header>
+<div class="p-8 flex flex-col gap-6 max-w-[1600px] mx-auto w-full">
+<!-- KPI Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="glass-panel p-5 rounded-xl">
+<div class="flex justify-between items-start mb-4">
+<p class="text-xs text-slate-400 font-medium">Total Requests (24h)</p>
+<span class="text-[11px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">+14.2%</span>
+</div>
+<div class="flex items-end justify-between">
+<h2 class="text-2xl font-bold tracking-tight text-white">12,482,901</h2>
+<div class="w-20 h-8 opacity-50">
+<svg class="w-full h-full" viewbox="0 0 100 40">
+<path d="M0,35 Q20,30 40,20 T80,10 T100,5" fill="none" stroke="#6467f2" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+</div>
+<div class="glass-panel p-5 rounded-xl">
+<div class="flex justify-between items-start mb-4">
+<p class="text-xs text-slate-400 font-medium">Active API Keys</p>
+<span class="text-[11px] font-bold text-slate-400 bg-white/5 px-1.5 py-0.5 rounded">0%</span>
+</div>
+<h2 class="text-2xl font-bold tracking-tight text-white">18</h2>
+</div>
+<div class="glass-panel p-5 rounded-xl border-l-2 border-l-orange-500/50">
+<div class="flex justify-between items-start mb-4">
+<p class="text-xs text-slate-400 font-medium">Avg. Latency</p>
+<span class="text-[11px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded">-2.1%</span>
+</div>
+<h2 class="text-2xl font-bold tracking-tight text-white">42<span class="text-sm font-normal text-slate-500 ml-1">ms</span></h2>
+</div>
+<div class="glass-panel p-5 rounded-xl border-l-2 border-l-primary/50">
+<div class="flex justify-between items-start mb-4">
+<p class="text-xs text-slate-400 font-medium">Error Rate</p>
+<span class="text-[11px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">-0.01%</span>
+</div>
+<h2 class="text-2xl font-bold tracking-tight text-white">0.04<span class="text-sm font-normal text-slate-500 ml-1">%</span></h2>
+</div>
+</div>
+<!-- Middle Content -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Main Chart -->
+<div class="lg:col-span-2 glass-panel p-6 rounded-xl flex flex-col gap-6">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-bold text-white tracking-tight">Requests Over Time</h3>
+<p class="text-[11px] text-slate-500 mt-0.5">Aggregated throughput across all clusters</p>
+</div>
+<div class="flex gap-2">
+<button class="px-2.5 py-1 text-[10px] font-bold rounded bg-primary text-white">1H</button>
+<button class="px-2.5 py-1 text-[10px] font-bold rounded text-slate-400 hover:bg-white/5">24H</button>
+<button class="px-2.5 py-1 text-[10px] font-bold rounded text-slate-400 hover:bg-white/5">7D</button>
+</div>
+</div>
+<div class="h-64 relative">
+<svg class="w-full h-full overflow-visible" preserveaspectratio="none">
+<defs>
+<lineargradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#6467f2" stop-opacity="0.3"></stop>
+<stop offset="100%" stop-color="#6467f2" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<path d="M0,200 Q100,180 200,100 T400,150 T600,80 T800,120 T1000,40 L1000,256 L0,256 Z" fill="url(#chartGradient)"></path>
+<path d="M0,200 Q100,180 200,100 T400,150 T600,80 T800,120 T1000,40" fill="none" stroke="#6467f2" stroke-linecap="round" stroke-width="2"></path>
+<circle cx="1000" cy="40" fill="#6467f2" r="4"></circle>
+</svg>
+<!-- Tooltip Mockup -->
+<div class="absolute top-4 right-1/4 glass-panel p-2 rounded shadow-2xl border-white/10 pointer-events-none">
+<p class="text-[10px] text-slate-400">14:20 UTC</p>
+<p class="text-xs font-bold text-white">82,410 req/s</p>
+</div>
+</div>
+</div>
+<!-- Method Distribution & Gauge -->
+<div class="glass-panel p-6 rounded-xl flex flex-col gap-8">
+<div>
+<h3 class="text-sm font-bold text-white tracking-tight mb-4">Method Distribution</h3>
+<div class="flex flex-col gap-4">
+<div>
+<div class="flex justify-between text-[11px] mb-1.5">
+<span class="text-slate-300 font-mono">eth_call</span>
+<span class="text-slate-400 font-medium">42.8%</span>
+</div>
+<div class="h-1 bg-white/5 rounded-full">
+<div class="h-full bg-primary" style="width: 42.8%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-[11px] mb-1.5">
+<span class="text-slate-300 font-mono">eth_getLogs</span>
+<span class="text-slate-400 font-medium">21.4%</span>
+</div>
+<div class="h-1 bg-white/5 rounded-full">
+<div class="h-full bg-primary/60" style="width: 21.4%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-[11px] mb-1.5">
+<span class="text-slate-300 font-mono">eth_blockNumber</span>
+<span class="text-slate-400 font-medium">18.1%</span>
+</div>
+<div class="h-1 bg-white/5 rounded-full">
+<div class="h-full bg-primary/40" style="width: 18.1%"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="pt-6 border-t border-border-subtle text-center">
+<h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">P95 Latency Gauge</h3>
+<div class="relative size-32 mx-auto">
+<svg class="size-full" viewbox="0 0 100 100">
+<circle cx="50" cy="50" fill="none" r="45" stroke="rgba(255,255,255,0.05)" stroke-dasharray="210" stroke-linecap="round" stroke-width="8" transform="rotate(135 50 50)"></circle>
+<circle cx="50" cy="50" fill="none" r="45" stroke="#6467f2" stroke-dasharray="180 282" stroke-linecap="round" stroke-width="8" transform="rotate(135 50 50)"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-2xl font-bold text-white leading-none">68</span>
+<span class="text-[10px] text-slate-500 font-medium">MS</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Global Latency Heatmap -->
+<div class="glass-panel p-6 rounded-xl">
+<div class="flex items-center justify-between mb-6">
+<div>
+<h3 class="text-sm font-bold text-white tracking-tight">Global Latency Distribution</h3>
+<p class="text-[11px] text-slate-500 mt-0.5">Bucket intensity based on response time</p>
+</div>
+<div class="flex items-center gap-2 text-[10px] text-slate-500">
+<span>Faster</span>
+<div class="flex gap-0.5">
+<div class="size-2 bg-primary/10 rounded-xs"></div>
+<div class="size-2 bg-primary/30 rounded-xs"></div>
+<div class="size-2 bg-primary/60 rounded-xs"></div>
+<div class="size-2 bg-primary/90 rounded-xs"></div>
+</div>
+<span>Slower</span>
+</div>
+</div>
+<div class="heatmap-grid">
+<!-- Simulated Grid Squares -->
+<!-- Row 1 -->
+<div class="aspect-square bg-primary/20 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/40 rounded-xs"></div>
+<div class="aspect-square bg-primary/60 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/30 rounded-xs"></div>
+<div class="aspect-square bg-primary/80 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/40 rounded-xs"></div>
+<div class="aspect-square bg-primary/20 rounded-xs"></div>
+<div class="aspect-square bg-primary/90 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/30 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/50 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/20 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/40 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/30 rounded-xs"></div>
+<!-- Row 2 -->
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/50 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/90 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/30 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/20 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/40 rounded-xs"></div>
+<div class="aspect-square bg-primary/60 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/40 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/20 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+<div class="aspect-square bg-primary/70 rounded-xs"></div>
+<div class="aspect-square bg-primary/10 rounded-xs"></div>
+</div>
+</div>
+<!-- Live Logs Table -->
+<div class="glass-panel rounded-xl overflow-hidden">
+<div class="p-6 border-b border-border-subtle flex items-center justify-between">
+<div class="flex items-center gap-3">
+<h3 class="text-sm font-bold text-white tracking-tight">Live Network Logs</h3>
+<div class="flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 rounded">
+<span class="size-1.5 bg-primary rounded-full animate-pulse"></span>
+<span class="text-[10px] font-bold text-primary uppercase">Live</span>
+</div>
+</div>
+<button class="text-xs text-slate-400 flex items-center gap-1 hover:text-white transition-colors">
+<span class="material-symbols-outlined !text-sm">filter_list</span>
+                            Filter Logs
+                        </button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-white/[0.02]">
+<th class="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Timestamp</th>
+<th class="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Method</th>
+<th class="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
+<th class="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Latency</th>
+<th class="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">API Key</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-subtle">
+<tr class="hover:bg-white/[0.02] transition-colors">
+<td class="px-6 py-4 text-xs font-mono text-slate-400">2023-11-24 14:21:44.201</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 bg-primary/10 text-primary rounded text-[10px] font-mono font-bold">eth_call</span>
+</td>
+<td class="px-6 py-4">
+<span class="text-emerald-500 font-bold text-[11px]">200 OK</span>
+</td>
+<td class="px-6 py-4 text-xs font-mono text-slate-400">18ms</td>
+<td class="px-6 py-4 text-xs font-mono text-slate-500">pk_live_4k82...9l1m</td>
+</tr>
+<tr class="hover:bg-white/[0.02] transition-colors">
+<td class="px-6 py-4 text-xs font-mono text-slate-400">2023-11-24 14:21:43.892</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 bg-white/5 text-slate-300 rounded text-[10px] font-mono font-bold">eth_getLogs</span>
+</td>
+<td class="px-6 py-4">
+<span class="text-emerald-500 font-bold text-[11px]">200 OK</span>
+</td>
+<td class="px-6 py-4 text-xs font-mono text-slate-400">142ms</td>
+<td class="px-6 py-4 text-xs font-mono text-slate-500">pk_live_8v21...3q0p</td>
+</tr>
+<tr class="hover:bg-white/[0.02] transition-colors">
+<td class="px-6 py-4 text-xs font-mono text-slate-400">2023-11-24 14:21:43.210</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 bg-primary/10 text-primary rounded text-[10px] font-mono font-bold">eth_call</span>
+</td>
+<td class="px-6 py-4">
+<span class="text-rose-500 font-bold text-[11px]">429 Rate Limited</span>
+</td>
+<td class="px-6 py-4 text-xs font-mono text-slate-400">4ms</td>
+<td class="px-6 py-4 text-xs font-mono text-slate-500">pk_live_9z44...2x1a</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

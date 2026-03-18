@@ -1,426 +1,367 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Filler,
-  Legend,
+  Chart as ChartJS, CategoryScale, LinearScale, PointElement,
+  LineElement, Tooltip, Filler
 } from 'chart.js';
-import { Line, Bar } from 'react-chartjs-2';
-import { Activity, Clock, Server, AlertCircle, RefreshCw, Users, Database, Zap, HardDrive, Cpu } from 'lucide-react';
+import { Line } from 'react-chartjs-2';
+import { Layers, LayoutDashboard, Terminal, Key, Download } from 'lucide-react';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Filler,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
+
+const ADMIN = { headers: { 'x-admin-secret': 'admin123' } };
 
 export default function App() {
+  const [tab, setTab] = useState('dashboard');
   const [logs, setLogs] = useState([]);
-  const [stats, setStats] = useState({ totalRequests: 0, users: [], mostUsedMethods: [] });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [stats, setStats] = useState({ totalRequests: 0, totalErrors: 0, users: [], mostUsedMethods: [] });
+  const [keys, setKeys] = useState([]);
+  const [wsStatus, setWsStatus] = useState('connecting');
+  const wsRef = useRef(null);
 
-  const fetchData = async () => {
-    try {
-      const [logsRes, statsRes] = await Promise.all([
-        axios.get('http://localhost:3000/logs'),
-        axios.get('http://localhost:3000/stats')
-      ]);
-      setLogs(logsRes.data.reverse()); // Put newest first
-      setStats(statsRes.data);
-      setError(null);
-      setLastRefreshed(new Date());
-    } catch (err) {
-      setError('Failed to fetch data. Is the backend running?');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // ── WebSocket live feed ──────────────────────────────────────────────────
   useEffect(() => {
-    fetchData();
-    const intervalId = setInterval(fetchData, 5000);
-    return () => clearInterval(intervalId);
+    function connect() {
+      const ws = new WebSocket('ws://localhost:3000');
+      wsRef.current = ws;
+      ws.onopen = () => setWsStatus('live');
+      ws.onclose = () => { setWsStatus('reconnecting'); setTimeout(connect, 3000); };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'init') setLogs(data.logs);
+        else setLogs(prev => [data, ...prev].slice(0, 500));
+      };
+    }
+    connect();
+    return () => wsRef.current?.close();
   }, []);
 
-  // Compute time series data uniquely format
-  const timeSeriesData = useMemo(() => {
-    const timeMap = {};
-    [...logs].reverse().forEach(log => {
-      try {
-        const dateObj = parseISO(log.time);
-        const timeKey = format(dateObj, 'HH:mm:ss');
-        timeMap[timeKey] = (timeMap[timeKey] || 0) + 1;
-      } catch (e) {}
+  // ── Stats polling ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const fetch = async () => {
+      try { const r = await axios.get('http://localhost:3000/stats', ADMIN); setStats(r.data); } catch {}
+    };
+    fetch();
+    const id = setInterval(fetch, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Key manager ──────────────────────────────────────────────────────────
+  const fetchKeys = async () => {
+    try { const r = await axios.get('http://localhost:3000/keys', ADMIN); setKeys(r.data); } catch {}
+  };
+  useEffect(() => { if (tab === 'keys') fetchKeys(); }, [tab]);
+
+  const createKey = async (tier) => {
+    await axios.post('http://localhost:3000/keys', { tier }, ADMIN);
+    fetchKeys();
+  };
+  const revokeKey = async (key) => {
+    await axios.delete(`http://localhost:3000/keys/${key}`, ADMIN);
+    fetchKeys();
+  };
+
+  // ── Export logs ──────────────────────────────────────────────────────────
+  const exportLogs = (type) => {
+    let content, mime, ext;
+    if (type === 'json') {
+      content = JSON.stringify(logs, null, 2); mime = 'application/json'; ext = 'json';
+    } else {
+      const rows = logs.map(l => `${l.time},${l.method},${l.userKey},${l.cached},${l.error}`);
+      content = ['time,method,userKey,cached,error', ...rows].join('\n');
+      mime = 'text/csv'; ext = 'csv';
+    }
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(new Blob([content], { type: mime })),
+      download: `rpc-logs.${ext}`
     });
-    return Object.entries(timeMap).map(([time, count]) => ({
-      time,
-      count
-    }));
+    a.click(); URL.revokeObjectURL(a.href);
+  };
+
+  // ── Chart data ───────────────────────────────────────────────────────────
+  const timeSeriesData = useMemo(() => {
+    const map = {};
+    [...logs].reverse().forEach(log => {
+      try { const k = format(parseISO(log.time), 'HH:mm:ss'); map[k] = (map[k] || 0) + 1; } catch {}
+    });
+    return Object.entries(map).map(([time, count]) => ({ time, count }));
   }, [logs]);
 
-  // Chart configuration for seamless animations and premium looks
   const lineChartData = {
     labels: timeSeriesData.map(d => d.time),
-    datasets: [
-      {
-        label: 'Requests per Second',
-        data: timeSeriesData.map(d => d.count),
-        borderColor: '#818cf8', // Indigo 400
-        backgroundColor: (context) => {
-          const chart = context.chart;
-          const { ctx, chartArea } = chart;
-          if (!chartArea) return null;
-          const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-          gradient.addColorStop(0, 'rgba(129, 140, 248, 0.5)'); // Top glow
-          gradient.addColorStop(1, 'rgba(129, 140, 248, 0.0)'); // Fades out
-          return gradient;
-        },
-        borderWidth: 3,
-        pointBackgroundColor: '#1e1b4b',
-        pointBorderColor: '#818cf8',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        fill: true,
-        tension: 0.4, // Smooth curved lines
+    datasets: [{
+      data: timeSeriesData.map(d => d.count),
+      borderColor: '#6467f2',
+      backgroundColor: (ctx) => {
+        const { ctx: c, chartArea } = ctx.chart;
+        if (!chartArea) return null;
+        const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+        g.addColorStop(0, 'rgba(100,103,242,0.3)'); g.addColorStop(1, 'rgba(100,103,242,0)');
+        return g;
       },
-    ],
+      borderWidth: 2, pointRadius: 0, pointHoverRadius: 6, fill: true, tension: 0.4,
+    }],
   };
 
   const lineChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: 800, easing: 'easeOutQuart' },
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: { color: 'rgba(255, 255, 255, 0.04)', drawBorder: false },
-        ticks: { color: '#64748b', stepSize: 1, padding: 10 },
-        border: { display: false }
-      },
-      x: {
-        grid: { display: false, drawBorder: false },
-        ticks: { color: '#64748b', maxTicksLimit: 8, maxRotation: 0, padding: 10 },
-        border: { display: false }
-      },
-    },
+    responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
+    scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: '#0f172a',
-        titleColor: '#f1f5f9',
-        bodyColor: '#94a3b8',
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderWidth: 1,
-        padding: 14,
-        cornerRadius: 12,
-        displayColors: false,
-        callbacks: {
-          label: (context) => `${context.parsed.y} Requests`
-        }
+        backgroundColor: 'rgba(17,17,30,0.9)', titleColor: '#fff', bodyColor: '#cbd5e1',
+        borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10, displayColors: false,
+        callbacks: { label: (c) => `${c.parsed.y} Requests` }
       },
     },
   };
 
-  const topMethods = stats.mostUsedMethods.slice(0, 6);
+  const cacheHitRate = logs.length > 0 ? ((logs.filter(l => l.cached).length / logs.length) * 100).toFixed(1) : 0;
+  const errorRate = logs.length > 0 ? ((logs.filter(l => l.error).length / logs.length) * 100).toFixed(1) : 0;
 
-  const barChartData = {
-    labels: topMethods.map(m => m.name),
-    datasets: [
-      {
-        data: topMethods.map(m => m.count),
-        backgroundColor: (context) => {
-          const chart = context.chart;
-          const { ctx, chartArea } = chart;
-          if (!chartArea) return null;
-          const gradient = ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0);
-          gradient.addColorStop(0, '#3b82f6'); // Blue 500
-          gradient.addColorStop(1, '#a855f7'); // Purple 500
-          return gradient;
-        },
-        borderRadius: 6,
-        barThickness: 14,
-      },
-    ],
-  };
-
-  const barChartOptions = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: 800, easing: 'easeOutQuart' },
-    scales: {
-      x: {
-        beginAtZero: true,
-        grid: { color: 'rgba(255, 255, 255, 0.04)', drawBorder: false },
-        ticks: { color: '#64748b', stepSize: 1, padding: 10 },
-        border: { display: false }
-      },
-      y: {
-        grid: { display: false, drawBorder: false },
-        ticks: { color: '#cbd5e1', font: { family: 'ui-monospace, Consolas, monospace', size: 12 }, padding: 10 },
-        border: { display: false }
-      },
-    },
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: '#0f172a',
-        titleColor: '#f1f5f9',
-        bodyColor: '#94a3b8',
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderWidth: 1,
-        padding: 14,
-        cornerRadius: 12,
-        displayColors: false,
-      },
-    },
-  };
+  const wsColors = { live: 'emerald', reconnecting: 'yellow', connecting: 'slate' };
+  const wsColor = wsColors[wsStatus] || 'slate';
 
   return (
-    <div className="min-h-screen bg-[#030712] p-4 sm:p-6 lg:p-8 font-sans selection:bg-indigo-500/30 text-slate-300">
-      <div className="max-w-7xl mx-auto space-y-6 lg:space-y-8">
-        
-        {/* Header Ribbon */}
-        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 border-b border-white/5 gap-4">
-          <div className="flex items-center space-x-4">
-            <div className="p-2.5 bg-gradient-to-tr from-indigo-500/20 to-purple-500/20 ring-1 ring-indigo-500/30 rounded-xl shadow-[0_0_20px_rgba(99,102,241,0.15)] relative overflow-hidden group">
-               <div className="absolute inset-0 bg-indigo-500/20 blur-xl group-hover:bg-indigo-400/30 transition-colors"></div>
-               <Server className="w-7 h-7 text-indigo-400 relative z-10" strokeWidth={1.5} />
+    <div className="flex h-screen overflow-hidden bg-background-dark text-slate-100 antialiased selection:bg-primary/30 font-display dark">
+      {/* Sidebar */}
+      <aside className="w-64 border-r border-border-subtle bg-obsidian flex flex-col shrink-0">
+        <div className="p-6 flex flex-col gap-8 h-full">
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center gap-3">
+              <div className="size-8 bg-primary rounded flex items-center justify-center text-white shadow-[0_0_15px_rgba(100,103,242,0.4)]">
+                <Layers className="size-5" />
+              </div>
+              <h1 className="text-lg font-bold tracking-tight text-white">RPCForge</h1>
             </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-slate-400">
-                RPCForge Node
-              </h1>
-              <p className="text-sm font-medium text-slate-500 mt-1 flex items-center gap-2">
-                Production Environment <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-              </p>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Environment</p>
+              <button className="w-full flex items-center px-3 py-2 bg-primary/10 border border-primary/20 rounded text-xs font-semibold text-primary cursor-default">
+                <span className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-primary animate-pulse"></span>
+                  Production
+                </span>
+              </button>
             </div>
           </div>
-          
-          <div className="flex items-center space-x-3 text-xs sm:text-sm text-slate-400 bg-white/[0.02] px-4 py-2 rounded-lg border border-white/5">
-            {lastRefreshed && (
-              <span className="flex items-center gap-2 font-medium">
-                <RefreshCw className="w-4 h-4 text-slate-500 animate-[spin_4s_linear_infinite]" />
-                Live Feed Active
-              </span>
-            )}
+
+          <nav className="flex-1 flex flex-col gap-1">
+            {[
+              { id: 'dashboard', icon: <LayoutDashboard className="size-5" />, label: 'Dashboard' },
+              { id: 'logs', icon: <Terminal className="size-5" />, label: 'Network Logs' },
+              { id: 'keys', icon: <Key className="size-5" />, label: 'API Keys' },
+            ].map(({ id, icon, label }) => (
+              <button key={id} onClick={() => setTab(id)}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors w-full text-left ${tab === id ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                {icon}
+                <span className="text-sm font-medium">{label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main className="flex-1 flex flex-col overflow-y-auto bg-background-dark custom-scrollbar">
+        <header className="h-16 border-b border-border-subtle bg-obsidian/50 backdrop-blur sticky top-0 z-50 px-8 flex items-center justify-between">
+          <div className={`flex items-center gap-2 px-3 py-1.5 bg-${wsColor}-500/10 border border-${wsColor}-500/20 rounded-full`}>
+            <span className={`size-2 bg-${wsColor}-500 rounded-full animate-pulse`}></span>
+            <span className={`text-[11px] font-bold text-${wsColor}-500 uppercase tracking-tighter`}>
+              {wsStatus === 'live' ? 'Live Feed Active' : wsStatus === 'reconnecting' ? 'Reconnecting...' : 'Connecting...'}
+            </span>
           </div>
         </header>
 
-        {loading && logs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32">
-            <div className="relative">
-              <div className="w-12 h-12 rounded-full border-2 border-indigo-500/20"></div>
-              <div className="w-12 h-12 rounded-full border-t-2 border-indigo-500 animate-spin absolute inset-0"></div>
-            </div>
-            <p className="text-slate-400 mt-6 font-medium animate-pulse">Initializing Dashboard...</p>
-          </div>
-        ) : error && logs.length === 0 ? (
-          <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-10 text-center flex flex-col items-center">
-            <AlertCircle className="w-12 h-12 text-red-400 mb-4" strokeWidth={1.5} />
-            <h3 className="text-lg font-semibold text-white mb-2">Node Unreachable</h3>
-            <p className="text-slate-400 max-w-sm">{error}</p>
-          </div>
-        ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            
-            {/* KPI Cards / Hero Stat Widgets */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
+        <div className="p-8 flex flex-col gap-6 max-w-[1600px] mx-auto w-full">
+
+          {/* ── DASHBOARD TAB ── */}
+          {tab === 'dashboard' && <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               {[
-                { label: 'Global Traffic', value: stats.totalRequests, icon: <Activity className="w-5 h-5 text-blue-400" />, color: 'blue' },
-                { label: 'Registered Keys', value: stats.users.length, icon: <Users className="w-5 h-5 text-indigo-400" />, color: 'indigo' },
-                { label: 'Distinct Methods', value: stats.mostUsedMethods.length, icon: <Cpu className="w-5 h-5 text-purple-400" />, color: 'purple' },
-                { label: 'Cache Hits', value: logs.filter(l => l.cached).length, icon: <Zap className="w-5 h-5 text-emerald-400" />, sub: 'recent', color: 'emerald' }
-              ].map((kpi, i) => (
-                <div key={i} className="group relative bg-[#0B1120] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
-                  <div className={`absolute inset-0 bg-gradient-to-br from-${kpi.color}-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl`} />
-                  <div className="relative flex items-start justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-400 mb-2">{kpi.label}</p>
-                      <div className="flex items-baseline gap-2">
-                        <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">{kpi.value.toLocaleString()}</h2>
-                        {kpi.sub && <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">{kpi.sub}</span>}
-                      </div>
-                    </div>
-                    <div className={`p-2.5 rounded-xl bg-${kpi.color}-500/10`}>
-                      {kpi.icon}
-                    </div>
+                { label: 'Total Requests', value: stats.totalRequests.toLocaleString(), badge: 'Live', badgeColor: 'emerald', border: 'primary' },
+                { label: 'Active API Keys', value: stats.users.length, badge: 'Utilized', badgeColor: 'slate', border: 'indigo' },
+                { label: 'Cache Hit Rate', value: `${cacheHitRate}%`, badge: 'Optimal', badgeColor: 'emerald', border: 'emerald' },
+                { label: 'Error Rate', value: `${errorRate}%`, badge: errorRate > 5 ? 'High' : 'Low', badgeColor: errorRate > 5 ? 'red' : 'emerald', border: 'red' },
+              ].map(({ label, value, badge, badgeColor, border }) => (
+                <div key={label} className={`glass-panel p-5 rounded-xl border-l-2 border-l-${border}-500/50`}>
+                  <div className="flex justify-between items-start mb-4">
+                    <p className="text-xs text-slate-400 font-medium">{label}</p>
+                    <span className={`text-[11px] font-bold text-${badgeColor}-500 bg-${badgeColor}-500/10 px-1.5 py-0.5 rounded`}>{badge}</span>
                   </div>
+                  <h2 className="text-3xl font-bold tracking-tight text-white">{value}</h2>
                 </div>
               ))}
             </div>
 
-            {/* Core Analytics Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-              
-              {/* Traffic Timeline */}
-              <div className="lg:col-span-3 bg-[#0B1120] border border-white/5 rounded-2xl p-6 relative overflow-hidden group">
-                <div className="flex justify-between items-center mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 glass-panel p-6 rounded-xl flex flex-col gap-6">
+                <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-base font-semibold text-white">Network Traffic</h3>
-                    <p className="text-xs text-slate-500 mt-1">Real-time throughput analysis</p>
+                    <h3 className="text-sm font-bold text-white tracking-tight">Requests Over Time</h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Real-time throughput analysis</p>
                   </div>
+                  <span className="px-2.5 py-1 text-[10px] font-bold rounded bg-primary/20 text-primary border border-primary/20">WebSocket</span>
                 </div>
-                <div className="h-[280px] w-full">
-                  <Line data={lineChartData} options={lineChartOptions} />
+                <div className="h-[300px] relative w-full">
+                  {timeSeriesData.length > 0
+                    ? <Line data={lineChartData} options={lineChartOptions} />
+                    : <div className="flex h-full items-center justify-center text-slate-500 text-sm">Waiting for incoming traffic...</div>}
                 </div>
               </div>
 
-              {/* Method Popularity */}
-              <div className="lg:col-span-2 bg-[#0B1120] border border-white/5 rounded-2xl p-6">
-                <div>
-                  <h3 className="text-base font-semibold text-white">Method Distribution</h3>
-                  <p className="text-xs text-slate-500 mt-1">Top invoked RPC endpoints</p>
+              <div className="glass-panel p-6 rounded-xl">
+                <h3 className="text-sm font-bold text-white tracking-tight mb-4">Top Method Distribution</h3>
+                <div className="flex flex-col gap-5">
+                  {stats.mostUsedMethods.slice(0, 5).map((method, i) => {
+                    const total = stats.mostUsedMethods.reduce((a, c) => a + c.count, 0);
+                    const pct = total > 0 ? ((method.count / total) * 100).toFixed(1) : 0;
+                    const opacities = ['', '/80', '/60', '/40', '/20'];
+                    return (
+                      <div key={method.name}>
+                        <div className="flex justify-between text-[11px] mb-1.5">
+                          <span className="text-slate-200 font-mono">{method.name}</span>
+                          <span className="text-slate-400">{pct}% ({method.count})</span>
+                        </div>
+                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div className={`h-full bg-primary${opacities[i]} rounded-full`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {stats.mostUsedMethods.length === 0 && <p className="text-xs text-slate-500 text-center py-4">No methods tracked yet.</p>}
                 </div>
-                {stats.mostUsedMethods.length === 0 ? (
-                  <div className="h-[280px] flex items-center justify-center text-sm text-slate-500">Awaiting traffic...</div>
-                ) : (
-                  <div className="h-[280px] w-full mt-6">
-                    <Bar data={barChartData} options={barChartOptions} />
-                  </div>
-                )}
               </div>
             </div>
+          </>}
 
-            {/* API Keys Utilization & Live Data Log */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              
-              {/* API Keys Monitor */}
-              <div className="xl:col-span-1 space-y-4">
-                <div className="bg-[#0B1120] border border-white/5 rounded-2xl p-6 h-full">
-                  <div className="flex items-center gap-2 mb-6">
-                    <HardDrive className="w-5 h-5 text-slate-400" />
-                    <h3 className="text-base font-semibold text-white">API Tier Usage</h3>
+          {/* ── LOGS TAB ── */}
+          {tab === 'logs' && (
+            <div className="glass-panel rounded-xl overflow-hidden">
+              <div className="p-6 border-b border-border-subtle flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-bold text-white">Live Network Logs</h3>
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 rounded border border-primary/20">
+                    <span className="size-1.5 bg-primary rounded-full animate-pulse"></span>
+                    <span className="text-[10px] font-bold text-primary uppercase">Live</span>
                   </div>
-                  <div className="space-y-3">
-                    {stats.users.sort((a,b) => b.requests - a.requests).map((user) => {
-                      // Calculate percentage based on top user
-                      const maxReq = Math.max(...stats.users.map(u => u.requests), 1);
-                      const pct = Math.round((user.requests / maxReq) * 100);
-                      
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => exportLogs('csv')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors">
+                    <Download className="size-3.5" /> CSV
+                  </button>
+                  <button onClick={() => exportLogs('json')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors">
+                    <Download className="size-3.5" /> JSON
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto max-h-[600px] custom-scrollbar overflow-y-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-obsidian/95 backdrop-blur z-10 border-b border-border-subtle">
+                    <tr>
+                      {['Timestamp', 'Method', 'Cache', 'Status', 'API Key'].map(h => (
+                        <th key={h} className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-subtle">
+                    {logs.slice(0, 200).map((log, i) => {
+                      let ts;
+                      try { ts = format(parseISO(log.time), 'yyyy-MM-dd HH:mm:ss.SSS'); } catch {}
                       return (
-                        <div key={user.apiKey} className="p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors relative overflow-hidden group">
-                          {/* Progress bar background */}
-                          <div 
-                            className="absolute left-0 top-0 bottom-0 bg-indigo-500/10 transition-all duration-1000 ease-out z-0" 
-                            style={{ width: `${pct}%` }} 
-                          />
-                          <div className="relative z-10 flex justify-between items-center">
-                            <span className="font-mono text-sm tracking-tight text-slate-300 font-medium">{user.apiKey}</span>
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-lg font-bold text-white">{user.requests.toLocaleString()}</span>
-                              <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">req</span>
-                            </div>
-                          </div>
-                        </div>
+                        <tr key={i} className="hover:bg-white/[0.03] transition-colors">
+                          <td className="px-6 py-3 text-xs font-mono text-slate-400 whitespace-nowrap">{ts}</td>
+                          <td className="px-6 py-3">
+                            <span className="px-2.5 py-1 rounded text-[11px] font-mono font-bold bg-primary/10 text-primary border border-primary/20">{log.method}</span>
+                          </td>
+                          <td className="px-6 py-3">
+                            {log.cached
+                              ? <span className="text-emerald-400 text-[11px] font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">⚡ HIT</span>
+                              : <span className="text-slate-400 text-[11px] font-bold bg-slate-500/10 px-2 py-0.5 rounded border border-slate-500/20">MISS</span>}
+                          </td>
+                          <td className="px-6 py-3">
+                            {log.error
+                              ? <span className="text-red-400 text-[11px] font-bold bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">ERROR</span>
+                              : <span className="text-emerald-400 text-[11px] font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">OK</span>}
+                          </td>
+                          <td className="px-6 py-3 text-xs font-mono text-slate-300">{log.userKey}</td>
+                        </tr>
                       );
                     })}
-                  </div>
-                </div>
+                    {logs.length === 0 && (
+                      <tr><td colSpan="5" className="px-6 py-12 text-center text-xs text-slate-500">No logs yet. Send RPC requests to populate.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-
-              {/* Seamless Live Stream Table */}
-              <div className="xl:col-span-2">
-                <div className="bg-[#0B1120] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
-                  <div className="px-6 py-5 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-                      </div>
-                      <h3 className="text-base font-semibold text-white">Live Event Stream</h3>
-                    </div>
-                    <span className="text-[10px] font-bold tracking-widest uppercase px-2 py-1 bg-white/5 text-slate-400 rounded-md">
-                      Latest {Math.min(logs.length, 50)} Logs
-                    </span>
-                  </div>
-                  
-                  <div className="overflow-x-auto max-h-[460px] overflow-y-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="sticky top-0 bg-[#0f172a]/95 backdrop-blur-md z-10 shadow-sm">
-                        <tr className="text-slate-500 text-[11px] uppercase tracking-wider font-semibold">
-                          <th className="px-6 py-4 border-b border-white/5">Endpoint / Method</th>
-                          <th className="px-6 py-4 border-b border-white/5">Identity</th>
-                          <th className="px-6 py-4 border-b border-white/5">Resolution</th>
-                          <th className="px-6 py-4 border-b border-white/5 text-right">Time executed</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5 relative">
-                        {logs.slice(0, 50).map((log, index) => {
-                          let formattedDate, timeAgo = '';
-                          try {
-                            const dateObj = parseISO(log.time);
-                            formattedDate = format(dateObj, 'MMM dd, HH:mm:ss');
-                            const diffS = Math.floor((new Date() - dateObj) / 1000);
-                            timeAgo = diffS < 6 ? 'Just now' : diffS < 60 ? `${diffS}s ago` : '';
-                          } catch(e) {}
-                          
-                          return (
-                            <tr key={index} className="hover:bg-white/[0.02] transition-colors group">
-                              <td className="px-6 py-3.5">
-                                <span className="font-mono text-[13px] font-semibold text-slate-200">
-                                  {log.method}
-                                </span>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded textxs font-mono text-slate-300 bg-white/5 border border-white/5">
-                                  {log.userKey}
-                                </span>
-                              </td>
-                              <td className="px-6 py-3.5">
-                                {log.cached ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                    <Zap className="w-3 h-3" /> CACHED
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20">
-                                    <Server className="w-3 h-3" /> FETCHED
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-6 py-3.5 text-right">
-                                <div className="flex flex-col items-end justify-center">
-                                  <span className="text-[13px] text-slate-300 font-medium">{formattedDate}</span>
-                                  {timeAgo && <span className="text-[11px] text-indigo-400 font-medium">{timeAgo}</span>}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {logs.length === 0 && (
-                          <tr>
-                            <td colSpan="4" className="px-6 py-12 text-center text-slate-500 text-sm">
-                              No requests captured yet. Fire some traffic!
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
             </div>
-          </div>
-        )}
-      </div>
+          )}
+
+          {/* ── KEYS TAB ── */}
+          {tab === 'keys' && (
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white">API Key Manager</h3>
+                <div className="flex gap-2">
+                  <button onClick={() => createKey('free')}
+                    className="px-4 py-2 text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors">
+                    + Free Key
+                  </button>
+                  <button onClick={() => createKey('pro')}
+                    className="px-4 py-2 text-xs font-semibold bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary rounded transition-colors">
+                    + Pro Key
+                  </button>
+                </div>
+              </div>
+
+              <div className="glass-panel rounded-xl overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead className="border-b border-border-subtle">
+                    <tr>
+                      {['API Key', 'Tier', 'Requests', 'Errors', 'Error Rate', 'Action'].map(h => (
+                        <th key={h} className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-subtle">
+                    {keys.map((k) => {
+                      const errPct = k.requests > 0 ? ((k.errors / k.requests) * 100).toFixed(1) : '0.0';
+                      return (
+                        <tr key={k.apiKey} className="hover:bg-white/[0.03] transition-colors">
+                          <td className="px-6 py-4 font-mono text-xs text-slate-200">{k.apiKey}</td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${k.tier === 'pro' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-white/5 text-slate-400 border border-white/10'}`}>
+                              {k.tier.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-xs text-slate-300">{k.requests}</td>
+                          <td className="px-6 py-4 text-xs text-slate-300">{k.errors}</td>
+                          <td className="px-6 py-4">
+                            <span className={`text-xs font-bold ${parseFloat(errPct) > 5 ? 'text-red-400' : 'text-emerald-400'}`}>{errPct}%</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <button onClick={() => revokeKey(k.apiKey)}
+                              className="px-3 py-1 text-[11px] font-semibold text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded transition-colors">
+                              Revoke
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {keys.length === 0 && (
+                      <tr><td colSpan="6" className="px-6 py-12 text-center text-xs text-slate-500">No keys found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
     </div>
   );
 }

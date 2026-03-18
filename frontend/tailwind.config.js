@@ -4,19 +4,26 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        dark: {
-          900: '#0f172a',
-          800: '#1e293b',
-          700: '#334155',
-        },
-        primary: {
-          500: '#3b82f6',
-          400: '#60a5fa',
-        }
-      }
+        "primary": "#6467f2",
+        "background-light": "#f6f6f8",
+        "background-dark": "#0a0a0f",
+        "obsidian": "#11111e",
+        "border-subtle": "rgba(100, 103, 242, 0.15)"
+      },
+      fontFamily: {
+        "display": ["Inter", "sans-serif"],
+        "mono": ["JetBrains Mono", "monospace"]
+      },
+      borderRadius: {
+        "DEFAULT": "0.125rem", 
+        "lg": "0.25rem", 
+        "xl": "0.5rem", 
+        "full": "0.75rem"
+      },
     },
   },
   plugins: [],

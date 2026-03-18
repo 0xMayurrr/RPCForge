@@ -23,8 +23,7 @@ const CHAINS = {
   arbitrum: [process.env.ARBITRUM_NODE_1, process.env.ARBITRUM_NODE_2].filter(Boolean),
 };
 
-// ─── API Keys (loaded from .env, stored in memory) ──────────────────────────
-// Format in .env: API_KEYS=key1:free,key2:pro
+// ─── API Keys ────────────────────────────────────────────────────────────────
 const TIER_LIMITS = { free: 20, pro: 100 };
 const BLOCKED_METHODS = ["eth_sendRawTransaction", "eth_sign", "personal_sign"];
 const CACHEABLE_METHODS = ["eth_blockNumber", "eth_chainId", "eth_gasPrice"];
@@ -34,7 +33,7 @@ function buildUsers() {
   const raw = process.env.API_KEYS || "";
   raw.split(",").forEach((entry) => {
     const [key, tier = "free"] = entry.trim().split(":");
-    if (key) map[key] = { requests: 0, errors: 0, methods: {}, tier };
+    if (key) map[key] = { requests: 0, errors: 0, methods: {}, tier, createdAt: new Date().toISOString() };
   });
   return map;
 }
@@ -67,7 +66,7 @@ wss.on("connection", (ws) => {
 });
 
 // ─── Retry / Failover ────────────────────────────────────────────────────────
-async function forwardWithRetry(body, chain = 'eth') {
+async function forwardWithRetry(body, chain = "eth") {
   const nodes = CHAINS[chain] || CHAINS.eth;
   const shuffled = [...nodes].sort(() => Math.random() - 0.5);
   let lastErr;
@@ -102,12 +101,12 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// ─── Health check (public) ─────────────────────────────────────────────────
+// ─── Health check (public) ───────────────────────────────────────────────────
 app.get("/health", (req, res) => {
   res.json({ status: "ok", uptime: Math.floor(process.uptime()), chains: Object.keys(CHAINS) });
 });
 
-// ─── Chains info (public) ───────────────────────────────────────────────────
+// ─── Chains info (public) ────────────────────────────────────────────────────
 app.get("/chains", (req, res) => {
   res.json(Object.keys(CHAINS).map(chain => ({
     chain,
@@ -116,10 +115,10 @@ app.get("/chains", (req, res) => {
   })));
 });
 
-// ─── Core RPC endpoint (multi-chain) ────────────────────────────────────────
+// ─── Core RPC endpoint (multi-chain) ─────────────────────────────────────────
 app.post("/:chain", async (req, res) => {
   const chain = req.params.chain;
-  if (!CHAINS[chain]) return res.status(400).json({ error: `Unsupported chain: ${chain}. Available: ${Object.keys(CHAINS).join(', ')}` });
+  if (!CHAINS[chain]) return res.status(400).json({ error: `Unsupported chain: ${chain}. Available: ${Object.keys(CHAINS).join(", ")}` });
 
   const userKey = req.headers["x-api-key"];
   const method = req.body.method;
@@ -143,6 +142,7 @@ app.post("/:chain", async (req, res) => {
     userKey,
     cached: false,
     error: false,
+    latency: null,
   };
 
   // Cache check
@@ -152,6 +152,7 @@ app.post("/:chain", async (req, res) => {
       const hit = cache.get(cacheKey);
       if (Date.now() - hit.timestamp < CACHE_TTL) {
         log.cached = true;
+        log.latency = 0;
         pushLog(log);
         return res.json(hit.response);
       }
@@ -159,6 +160,7 @@ app.post("/:chain", async (req, res) => {
     }
   }
 
+  const start = Date.now();
   try {
     const data = await forwardWithRetry(req.body, chain);
 
@@ -166,19 +168,25 @@ app.post("/:chain", async (req, res) => {
       cache.set(JSON.stringify(req.body), { response: data, timestamp: Date.now() });
     }
 
+    log.latency = Date.now() - start;
     pushLog(log);
     res.json(data);
   } catch (err) {
     users[userKey].errors += 1;
     log.error = true;
+    log.latency = Date.now() - start;
     pushLog(log);
-    console.error("RPC Error:", err.message);
+    console.error(`[RPCForge] RPC Error on ${chain}:`, err.message);
     res.status(500).json({ error: "Error forwarding request" });
   }
 });
 
 // ─── Logs (protected) ────────────────────────────────────────────────────────
-app.get("/logs", adminAuth, (req, res) => res.json(logs));
+app.get("/logs", adminAuth, (req, res) => {
+  const { chain, limit = 500 } = req.query;
+  const filtered = chain ? logs.filter(l => l.chain === chain) : logs;
+  res.json(filtered.slice(0, parseInt(limit)));
+});
 
 // ─── Stats (protected) ───────────────────────────────────────────────────────
 app.get("/stats", adminAuth, (req, res) => {
@@ -207,6 +215,13 @@ app.get("/stats", adminAuth, (req, res) => {
   res.json({ totalRequests, totalErrors, users: formattedUsers, mostUsedMethods });
 });
 
+// ─── Cache clear (protected) ─────────────────────────────────────────────────
+app.delete("/cache", adminAuth, (req, res) => {
+  const size = cache.size;
+  cache.clear();
+  res.json({ success: true, cleared: size });
+});
+
 // ─── API Key Manager (protected) ─────────────────────────────────────────────
 app.get("/keys", adminAuth, (req, res) => {
   res.json(
@@ -222,7 +237,7 @@ app.get("/keys", adminAuth, (req, res) => {
 app.post("/keys", adminAuth, (req, res) => {
   const { tier = "free" } = req.body;
   const newKey = uuidv4().replace(/-/g, "").slice(0, 16);
-  users[newKey] = { requests: 0, errors: 0, methods: {}, tier };
+  users[newKey] = { requests: 0, errors: 0, methods: {}, tier, createdAt: new Date().toISOString() };
   res.json({ apiKey: newKey, tier });
 });
 

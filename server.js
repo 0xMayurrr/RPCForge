@@ -14,11 +14,14 @@ const wss = new WebSocketServer({ server });
 app.use(cors({ origin: "http://localhost:5173" }));
 app.use(express.json());
 
-// ─── Nodes from .env ────────────────────────────────────────────────────────
-const NODES = [
-  process.env.INFURA_URL,
-  process.env.ALCHEMY_URL,
-].filter(Boolean);
+// ─── Multi-chain nodes from .env ───────────────────────────────────────────
+const CHAINS = {
+  eth:      [process.env.ETH_NODE_1,      process.env.ETH_NODE_2].filter(Boolean),
+  sepolia:  [process.env.SEPOLIA_NODE_1].filter(Boolean),
+  polygon:  [process.env.POLYGON_NODE_1,  process.env.POLYGON_NODE_2].filter(Boolean),
+  bsc:      [process.env.BSC_NODE_1,      process.env.BSC_NODE_2].filter(Boolean),
+  arbitrum: [process.env.ARBITRUM_NODE_1, process.env.ARBITRUM_NODE_2].filter(Boolean),
+};
 
 // ─── API Keys (loaded from .env, stored in memory) ──────────────────────────
 // Format in .env: API_KEYS=key1:free,key2:pro
@@ -64,8 +67,9 @@ wss.on("connection", (ws) => {
 });
 
 // ─── Retry / Failover ────────────────────────────────────────────────────────
-async function forwardWithRetry(body) {
-  const shuffled = [...NODES].sort(() => Math.random() - 0.5);
+async function forwardWithRetry(body, chain = 'eth') {
+  const nodes = CHAINS[chain] || CHAINS.eth;
+  const shuffled = [...nodes].sort(() => Math.random() - 0.5);
   let lastErr;
   for (const node of shuffled) {
     try {
@@ -98,8 +102,20 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// ─── Core RPC endpoint ───────────────────────────────────────────────────────
-app.post("/", async (req, res) => {
+// ─── Chains info (public) ───────────────────────────────────────────────────
+app.get("/chains", (req, res) => {
+  res.json(Object.keys(CHAINS).map(chain => ({
+    chain,
+    nodes: CHAINS[chain].length,
+    endpoint: `POST /${chain}`,
+  })));
+});
+
+// ─── Core RPC endpoint (multi-chain) ────────────────────────────────────────
+app.post("/:chain", async (req, res) => {
+  const chain = req.params.chain;
+  if (!CHAINS[chain]) return res.status(400).json({ error: `Unsupported chain: ${chain}. Available: ${Object.keys(CHAINS).join(', ')}` });
+
   const userKey = req.headers["x-api-key"];
   const method = req.body.method;
 
@@ -118,6 +134,7 @@ app.post("/", async (req, res) => {
     id: uuidv4(),
     time: new Date().toISOString(),
     method,
+    chain,
     userKey,
     cached: false,
     error: false,
@@ -138,7 +155,7 @@ app.post("/", async (req, res) => {
   }
 
   try {
-    const data = await forwardWithRetry(req.body);
+    const data = await forwardWithRetry(req.body, chain);
 
     if (CACHEABLE_METHODS.includes(method) && data && !data.error) {
       cache.set(JSON.stringify(req.body), { response: data, timestamp: Date.now() });

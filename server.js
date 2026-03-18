@@ -1,6 +1,6 @@
 const express = require("express");
 const axios = require("axios");
-const rateLimit = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const cors = require("cors");
 
 const app = express();
@@ -32,7 +32,7 @@ const CACHE_TTL = 10 * 1000; // 10 seconds in ms
 const CACHEABLE_METHODS = ["eth_blockNumber", "eth_chainId", "eth_gasPrice"];
 
 // 🚫 4. Advanced Rate Limiting (per API key)
-const keyGenerator = (req) => req.headers["x-api-key"] || req.ip;
+const keyGenerator = (req) => req.headers["x-api-key"] || ipKeyGenerator(req);
 
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute

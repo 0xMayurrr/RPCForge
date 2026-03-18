@@ -1,6 +1,6 @@
 {
   "name": "rpcforge-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI tool for RPCForge — your personal Ethereum RPC provider",
   "type": "module",
   "bin": {

@@ -102,6 +102,11 @@ function adminAuth(req, res, next) {
   next();
 }
 
+// ─── Health check (public) ─────────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", uptime: Math.floor(process.uptime()), chains: Object.keys(CHAINS) });
+});
+
 // ─── Chains info (public) ───────────────────────────────────────────────────
 app.get("/chains", (req, res) => {
   res.json(Object.keys(CHAINS).map(chain => ({

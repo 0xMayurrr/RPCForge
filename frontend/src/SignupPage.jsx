@@ -26,23 +26,31 @@ export default function SignupPage() {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
 
-        // create user record + generate API key
-        if (data.user) {
-          const apiKey = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
-          await supabase.from('users').insert({
-            id: data.user.id,
-            email,
-            tier: plan,
-            api_key: apiKey,
-          });
+        // if email confirmation is required, session won't exist yet
+        if (!data.session) {
+          setError('Check your email to confirm your account, then log in.');
+          setIsLoading(false);
+          setMode('login');
+          return;
         }
+
+        const apiKey = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+        await supabase.from('users').insert({
+          id: data.user.id,
+          email,
+          tier: plan,
+          api_key: apiKey,
+        });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
       navigate('/dashboard');
     } catch (err) {
-      setError(err.message);
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('invalid login')) setError('Wrong email or password.');
+      else if (msg.toLowerCase().includes('email not confirmed')) setError('Please confirm your email first, then log in.');
+      else setError(msg);
     } finally {
       setIsLoading(false);
     }

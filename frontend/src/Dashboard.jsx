@@ -24,16 +24,18 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userRecord, setUserRecord] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const wsRef = useRef(null);
   const navigate = useNavigate();
 
   // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { navigate('/signup'); return; }
+      if (!session) { setAuthLoading(false); navigate('/signup'); return; }
       setUser(session.user);
       supabase.from('users').select('*').eq('id', session.user.id).single()
-        .then(({ data }) => setUserRecord(data));
+        .then(({ data }) => { setUserRecord(data); })
+        .finally(() => setAuthLoading(false));
     });
   }, []);
 
@@ -48,23 +50,27 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── WebSocket live feed ──────────────────────────────────────────────────
+  // ── WebSocket live feed (only after auth ready) ─────────────────────────
   useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
     function connect() {
+      if (cancelled) return;
       const ws = new WebSocket('wss://rpcforge-production.up.railway.app');
       wsRef.current = ws;
-      ws.onopen = () => setWsStatus('live');
-      ws.onclose = () => { setWsStatus('reconnecting'); setTimeout(connect, 3000); };
-      ws.onerror = () => ws.close();
+      ws.onopen = () => { if (!cancelled) setWsStatus('live'); };
+      ws.onclose = () => { if (!cancelled) { setWsStatus('reconnecting'); setTimeout(connect, 3000); } };
+      ws.onerror = () => { if (!cancelled) ws.close(); };
       ws.onmessage = (e) => {
+        if (cancelled) return;
         const data = JSON.parse(e.data);
         if (data.type === 'init') setLogs(data.logs);
         else setLogs(prev => [data, ...prev].slice(0, 500));
       };
     }
-    connect();
-    return () => wsRef.current?.close();
-  }, []);
+    const t = setTimeout(connect, 50);
+    return () => { cancelled = true; clearTimeout(t); wsRef.current?.close(); wsRef.current = null; };
+  }, [authLoading]);
 
   // ── Stats polling ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -151,6 +157,12 @@ export default function App() {
 
   const wsColors = { live: 'emerald', reconnecting: 'yellow', connecting: 'slate' };
   const wsColor = wsColors[wsStatus] || 'slate';
+
+  if (authLoading) return (
+    <div className="flex h-screen items-center justify-center bg-background-dark">
+      <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-background-dark text-slate-100 antialiased selection:bg-primary/30 font-display dark">

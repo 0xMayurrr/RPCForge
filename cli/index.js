@@ -6,8 +6,11 @@ import axios from 'axios';
 
 const BASE_URL = 'https://rpcforge-production.up.railway.app';
 const CHAINS = ['eth', 'polygon', 'bsc', 'arbitrum', 'sepolia'];
-const ADMIN_SECRET = 'admin123';
-const ADMIN = { headers: { 'x-admin-secret': ADMIN_SECRET } };
+const getAdmin = async () => {
+  const secret = process.env.RPCFORGE_ADMIN_SECRET ||
+    (await inquirer.prompt([{ type: 'password', name: 's', message: 'Admin secret:' }])).s;
+  return { headers: { 'x-admin-secret': secret } };
+};
 
 const command = process.argv[2];
 
@@ -54,12 +57,14 @@ async function init() {
     let key = apiKey.trim();
 
     if (!key) {
-      const { data } = await axios.post(`${BASE_URL}/keys`, { tier: 'free' }, ADMIN);
+      const admin = await getAdmin();
+      const { data } = await axios.post(`${BASE_URL}/keys`, { tier: 'free' }, admin);
       key = data.apiKey;
       spinner.succeed(chalk.green(`New free key generated: ${chalk.bold(key)}`));
     } else {
       // validate key
-      const { data } = await axios.get(`${BASE_URL}/keys`, ADMIN);
+      const admin = await getAdmin();
+      const { data } = await axios.get(`${BASE_URL}/keys`, admin);
       const found = data.find(k => k.apiKey === key);
       if (!found) {
         spinner.fail(chalk.red('API key not found. Run `rpcforge keys create` to make one.'));
@@ -143,7 +148,8 @@ async function keys() {
     }]);
     const spinner = ora('Creating key...').start();
     try {
-      const { data } = await axios.post(`${BASE_URL}/keys`, { tier }, ADMIN);
+      const admin = await getAdmin();
+      const { data } = await axios.post(`${BASE_URL}/keys`, { tier }, admin);
       spinner.succeed(chalk.green(`Key created!`));
       console.log(chalk.gray('\n  API Key: ') + chalk.yellow.bold(data.apiKey));
       console.log(chalk.gray('  Tier:    ') + chalk.white(data.tier.toUpperCase()) + '\n');
@@ -162,7 +168,8 @@ async function keys() {
     }]);
     const spinner = ora('Revoking...').start();
     try {
-      await axios.delete(`${BASE_URL}/keys/${apiKey.trim()}`, ADMIN);
+      const admin = await getAdmin();
+      await axios.delete(`${BASE_URL}/keys/${apiKey.trim()}`, admin);
       spinner.succeed(chalk.green('Key revoked.'));
     } catch {
       spinner.fail(chalk.red('Key not found or server unreachable.'));
@@ -173,7 +180,8 @@ async function keys() {
   // list keys
   const spinner = ora('Fetching keys...').start();
   try {
-    const { data } = await axios.get(`${BASE_URL}/keys`, ADMIN);
+    const admin = await getAdmin();
+    const { data } = await axios.get(`${BASE_URL}/keys`, admin);
     spinner.stop();
     if (!data.length) { console.log(chalk.gray('  No keys found.')); return; }
 
@@ -196,7 +204,8 @@ async function keys() {
 async function stats() {
   const spinner = ora('Fetching stats...').start();
   try {
-    const { data } = await axios.get(`${BASE_URL}/stats`, ADMIN);
+    const admin = await getAdmin();
+    const { data } = await axios.get(`${BASE_URL}/stats`, admin);
     spinner.stop();
 
     console.log('\n' + chalk.bold.white('  📊 RPCForge Stats\n'));

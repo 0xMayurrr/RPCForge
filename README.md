@@ -5,6 +5,7 @@
 <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
 <img src="https://img.shields.io/badge/Deployed-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" />
 <img src="https://img.shields.io/badge/Frontend-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" />
+<a href="https://www.npmjs.com/package/rpcforge-cli"><img src="https://img.shields.io/npm/v/rpcforge-cli?style=for-the-badge&logo=npm&logoColor=white&color=CB3837" /></a>
 
 <br /><br />
 
@@ -486,19 +487,57 @@ All admin routes require the `x-admin-secret` header.
 
 ## CLI
 
+The easiest way to use RPCForge is via the official CLI — no cloning required.
+
+### Install globally
+
 ```bash
-cd cli
-npm install
-npm link   # makes `rpcforge` available globally
+npm install -g rpcforge-cli
 ```
 
+### Run your first command
+
+```bash
+rpcforge init
 ```
-rpcforge init          Setup your endpoint & get usage examples
-rpcforge test          Send a test eth_blockNumber request
-rpcforge keys          List all API keys
-rpcforge keys create   Create a new API key
-rpcforge keys revoke   Revoke an API key
-rpcforge stats         Show request stats
+
+That's it. The CLI will walk you through picking a chain, generating or validating your API key, and print ready-to-use code snippets for ethers.js, curl, and Hardhat.
+
+### All commands
+
+| Command | Description |
+|---|---|
+| `rpcforge init` | Setup your endpoint & get usage examples |
+| `rpcforge test` | Send a live `eth_blockNumber` test request |
+| `rpcforge keys` | List all API keys |
+| `rpcforge keys create` | Create a new API key (free or pro) |
+| `rpcforge keys revoke` | Revoke an API key |
+| `rpcforge stats` | Show total requests, errors, top methods |
+
+### Windows users — if `rpcforge` is not recognized
+
+After installing, if you see `'rpcforge' is not recognized`, npm's global bin folder isn't in your PATH. Fix it by running this in cmd **as Administrator**:
+
+```cmd
+setx PATH "%PATH%;%APPDATA%\npm" /M
+```
+
+Then close and reopen your terminal. Alternatively, use npx without any install:
+
+```cmd
+npx rpcforge-cli init
+```
+
+### Optional: set your admin secret as an env var
+
+So you're not prompted every time you run `keys` or `stats`:
+
+```bash
+# macOS / Linux — add to ~/.bashrc or ~/.zshrc
+export RPCFORGE_ADMIN_SECRET=your_secret_here
+
+# Windows cmd
+setx RPCFORGE_ADMIN_SECRET your_secret_here
 ```
 
 ---

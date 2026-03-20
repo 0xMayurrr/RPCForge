@@ -3,7 +3,7 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, polygon, arbitrum } from 'wagmi/chains';
 import { WagmiProvider } from 'wagmi';
 
-const API_KEY = process.env.NEXT_PUBLIC_RPCFORGE_API_KEY;
+const API_KEY = process.env.NEXT_PUBLIC_RPCFORGE_API_KEY ?? '';
 
 export const config = createConfig({
   chains: [mainnet, polygon, arbitrum],

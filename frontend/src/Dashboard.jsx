@@ -28,11 +28,12 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userRecord, setUserRecord] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [keyLoading, setKeyLoading] = useState(false);
+  const [keyError, setKeyError] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
   const wsRef = useRef(null);
-  const navigate = useNavigate();
 
-  // ── Auth guard ───────────────────────────────────────────────────────────
+  const navigate = useNavigate();
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { setAuthLoading(false); navigate('/signup'); return; }
@@ -107,14 +108,26 @@ export default function App() {
   useEffect(() => { if (tab === 'keys') fetchKeys(); }, [tab]);
 
   const createKey = async (tier) => {
-    const headers = await getAuthHeaders();
-    await axios.post(`${BASE_URL}/keys`, { tier }, headers);
-    fetchKeys();
+    setKeyLoading(true);
+    setKeyError('');
+    try {
+      const headers = await getAuthHeaders();
+      await axios.post(`${BASE_URL}/keys`, { tier }, headers);
+      await fetchKeys();
+    } catch (e) {
+      setKeyError(e?.response?.data?.error || e.message || 'Failed to create key');
+    } finally {
+      setKeyLoading(false);
+    }
   };
   const revokeKey = async (key) => {
-    const headers = await getAuthHeaders();
-    await axios.delete(`${BASE_URL}/keys/${key}`, headers);
-    fetchKeys();
+    try {
+      const headers = await getAuthHeaders();
+      await axios.delete(`${BASE_URL}/keys/${key}`, headers);
+      await fetchKeys();
+    } catch (e) {
+      setKeyError(e?.response?.data?.error || e.message || 'Failed to revoke key');
+    }
   };
 
   // ── Export logs ──────────────────────────────────────────────────────────
@@ -389,16 +402,17 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white">API Key Manager</h3>
                 <div className="flex gap-2">
-                  <button onClick={() => createKey('free')}
-                    className="px-4 py-2 text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors">
-                    + Free Key
+                  <button onClick={() => createKey('free')} disabled={keyLoading}
+                    className="px-4 py-2 text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors disabled:opacity-50">
+                    {keyLoading ? 'Creating...' : '+ Free Key'}
                   </button>
-                  <button onClick={() => createKey('pro')}
-                    className="px-4 py-2 text-xs font-semibold bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary rounded transition-colors">
-                    + Pro Key
+                  <button onClick={() => createKey('pro')} disabled={keyLoading}
+                    className="px-4 py-2 text-xs font-semibold bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary rounded transition-colors disabled:opacity-50">
+                    {keyLoading ? 'Creating...' : '+ Pro Key'}
                   </button>
                 </div>
               </div>
+              {keyError && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-lg">{keyError}</p>}
 
               <div className="glass-panel rounded-xl overflow-hidden">
                 <table className="w-full text-left border-collapse">

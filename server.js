@@ -143,7 +143,100 @@ app.get("/chains", (req, res) => {
   })));
 });
 
-// ─── Core RPC endpoint (multi-chain) ─────────────────────────────────────────
+// ─── API Keys (JWT protected) ─────────────────────────────────────────────────
+app.get("/keys", authMiddleware, async (req, res) => {
+  const { data } = await supabase
+    .from("api_keys")
+    .select("key, tier, request_count, error_count, created_at")
+    .eq("user_id", req.user.id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  res.json((data || []).map(k => ({ apiKey: k.key, tier: k.tier, requests: k.request_count, errors: k.error_count })));
+});
+
+app.post("/keys", authMiddleware, async (req, res) => {
+  const { tier = "free" } = req.body;
+  const newKey = uuidv4().replace(/-/g, "").slice(0, 16);
+  const { data, error } = await supabase.from("api_keys").insert({
+    user_id: req.user.id,
+    key: newKey,
+    tier,
+  }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ apiKey: data.key, tier: data.tier });
+});
+
+app.delete("/keys/:key", authMiddleware, async (req, res) => {
+  const { error } = await supabase
+    .from("api_keys")
+    .update({ is_active: false })
+    .eq("key", req.params.key)
+    .eq("user_id", req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  await cacheDel(`tier:${req.params.key}`);
+  res.json({ success: true });
+});
+
+app.patch("/keys/:key", authMiddleware, async (req, res) => {
+  const { tier } = req.body;
+  if (!TIER_LIMITS[tier]) return res.status(400).json({ error: "Invalid tier" });
+  const { error } = await supabase
+    .from("api_keys")
+    .update({ tier })
+    .eq("key", req.params.key)
+    .eq("user_id", req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  await cacheSet(`tier:${req.params.key}`, tier, 300);
+  res.json({ apiKey: req.params.key, tier });
+});
+
+// ─── Stats (JWT protected) ────────────────────────────────────────────────────
+app.get("/stats", authMiddleware, async (req, res) => {
+  const [keysRes, logsRes] = await Promise.all([
+    supabase.from("api_keys").select("key, tier, request_count, error_count, is_active").eq("user_id", req.user.id),
+    supabase.from("request_logs").select("method, cache_hit, status").eq("user_id", req.user.id),
+  ]);
+
+  const keys = keysRes.data || [];
+  const logs = logsRes.data || [];
+
+  const totalRequests = keys.reduce((s, k) => s + (k.request_count || 0), 0);
+  const totalErrors = keys.reduce((s, k) => s + (k.error_count || 0), 0);
+
+  const methodMap = {};
+  logs.forEach(l => { methodMap[l.method] = (methodMap[l.method] || 0) + 1; });
+  const mostUsedMethods = Object.entries(methodMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({ name, count }));
+
+  res.json({
+    totalRequests,
+    totalErrors,
+    users: keys.map(k => ({ apiKey: k.key, tier: k.tier, requests: k.request_count, errors: k.error_count })),
+    mostUsedMethods,
+  });
+});
+
+// ─── Logs (JWT protected) ─────────────────────────────────────────────────────
+app.get("/logs", authMiddleware, async (req, res) => {
+  const { chain, limit = 200 } = req.query;
+  let query = supabase
+    .from("request_logs")
+    .select("*")
+    .eq("user_id", req.user.id)
+    .order("created_at", { ascending: false })
+    .limit(parseInt(limit));
+  if (chain) query = query.eq("chain", chain);
+  const { data } = await query;
+  res.json(data || []);
+});
+
+// ─── Cache clear (JWT protected) ──────────────────────────────────────────────
+app.delete("/cache", authMiddleware, async (req, res) => {
+  res.json({ success: true, message: "Use Upstash dashboard to flush Redis cache" });
+});
+
+// ─── Core RPC endpoint (multi-chain) — must be LAST ──────────────────────────
 app.post("/:chain", async (req, res) => {
   const chain = req.params.chain;
   if (!CHAINS[chain]) return res.status(400).json({ error: `Unsupported chain: ${chain}. Available: ${Object.keys(CHAINS).join(", ")}` });
@@ -247,100 +340,6 @@ app.post("/:chain", async (req, res) => {
     console.error(`[RPCForge] RPC Error on ${chain}:`, err.message);
     res.status(500).json({ error: "Error forwarding request" });
   }
-});
-
-// ─── Stats (JWT protected) ────────────────────────────────────────────────────
-app.get("/stats", authMiddleware, async (req, res) => {
-  const [keysRes, logsRes] = await Promise.all([
-    supabase.from("api_keys").select("key, tier, request_count, error_count, is_active").eq("user_id", req.user.id),
-    supabase.from("request_logs").select("method, cache_hit, status").eq("user_id", req.user.id),
-  ]);
-
-  const keys = keysRes.data || [];
-  const logs = logsRes.data || [];
-
-  const totalRequests = keys.reduce((s, k) => s + (k.request_count || 0), 0);
-  const totalErrors = keys.reduce((s, k) => s + (k.error_count || 0), 0);
-
-  const methodMap = {};
-  logs.forEach(l => { methodMap[l.method] = (methodMap[l.method] || 0) + 1; });
-  const mostUsedMethods = Object.entries(methodMap)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({ name, count }));
-
-  res.json({
-    totalRequests,
-    totalErrors,
-    users: keys.map(k => ({ apiKey: k.key, tier: k.tier, requests: k.request_count, errors: k.error_count })),
-    mostUsedMethods,
-  });
-});
-
-// ─── Logs (JWT protected) ─────────────────────────────────────────────────────
-app.get("/logs", authMiddleware, async (req, res) => {
-  const { chain, limit = 200 } = req.query;
-  let query = supabase
-    .from("request_logs")
-    .select("*")
-    .eq("user_id", req.user.id)
-    .order("created_at", { ascending: false })
-    .limit(parseInt(limit));
-  if (chain) query = query.eq("chain", chain);
-  const { data } = await query;
-  res.json(data || []);
-});
-
-// ─── API Keys (JWT protected) ─────────────────────────────────────────────────
-app.get("/keys", authMiddleware, async (req, res) => {
-  const { data } = await supabase
-    .from("api_keys")
-    .select("key, tier, request_count, error_count, created_at")
-    .eq("user_id", req.user.id)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false });
-  res.json((data || []).map(k => ({ apiKey: k.key, tier: k.tier, requests: k.request_count, errors: k.error_count })));
-});
-
-app.post("/keys", authMiddleware, async (req, res) => {
-  const { tier = "free" } = req.body;
-  const newKey = uuidv4().replace(/-/g, "").slice(0, 16);
-  const { data, error } = await supabase.from("api_keys").insert({
-    user_id: req.user.id,
-    key: newKey,
-    tier,
-  }).select().single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ apiKey: data.key, tier: data.tier });
-});
-
-app.delete("/keys/:key", authMiddleware, async (req, res) => {
-  const { error } = await supabase
-    .from("api_keys")
-    .update({ is_active: false })
-    .eq("key", req.params.key)
-    .eq("user_id", req.user.id);
-  if (error) return res.status(500).json({ error: error.message });
-  // Invalidate tier cache
-  await cacheDel(`tier:${req.params.key}`);
-  res.json({ success: true });
-});
-
-app.patch("/keys/:key", authMiddleware, async (req, res) => {
-  const { tier } = req.body;
-  if (!TIER_LIMITS[tier]) return res.status(400).json({ error: "Invalid tier" });
-  const { error } = await supabase
-    .from("api_keys")
-    .update({ tier })
-    .eq("key", req.params.key)
-    .eq("user_id", req.user.id);
-  if (error) return res.status(500).json({ error: error.message });
-  await cacheSet(`tier:${req.params.key}`, tier, 300);
-  res.json({ apiKey: req.params.key, tier });
-});
-
-// ─── Cache clear (JWT protected) ──────────────────────────────────────────────
-app.delete("/cache", authMiddleware, async (req, res) => {
-  res.json({ success: true, message: "Use Upstash dashboard to flush Redis cache" });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────

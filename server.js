@@ -22,11 +22,29 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// ─── Upstash Redis ────────────────────────────────────────────────────────────
-const redis = new Redis({
+// ─── Upstash Redis (optional — falls back to in-memory) ──────────────────────
+const redisConfigured = process.env.UPSTASH_REST_URL?.startsWith('https');
+const redis = redisConfigured ? new Redis({
   url: process.env.UPSTASH_REST_URL,
   token: process.env.UPSTASH_REST_TOKEN,
-});
+}) : null;
+if (!redisConfigured) console.warn('[RPCForge] Redis not configured — using in-memory fallback');
+
+const memCache = new Map();
+async function cacheGet(key) {
+  if (redis) return redis.get(key);
+  const e = memCache.get(key);
+  if (!e || Date.now() > e.exp) { memCache.delete(key); return null; }
+  return e.val;
+}
+async function cacheSet(key, val, ttl) {
+  if (redis) return redis.set(key, val, { ex: ttl });
+  memCache.set(key, { val, exp: Date.now() + ttl * 1000 });
+}
+async function cacheDel(key) {
+  if (redis) return redis.del(key);
+  memCache.delete(key);
+}
 
 // ─── Multi-chain nodes from .env ──────────────────────────────────────────────
 const CHAINS = {
@@ -95,7 +113,7 @@ const limiter = rateLimit({
   max: async (req) => {
     const userKey = req.headers["x-api-key"];
     if (!userKey) return 20;
-    const cached = await redis.get(`tier:${userKey}`);
+    const cached = await cacheGet(`tier:${userKey}`);
     if (cached) return TIER_LIMITS[cached] || 20;
     const { data } = await supabase
       .from("api_keys")
@@ -103,7 +121,7 @@ const limiter = rateLimit({
       .eq("key", userKey)
       .eq("is_active", true)
       .single();
-    if (data?.tier) await redis.set(`tier:${userKey}`, data.tier, { ex: 300 });
+    if (data?.tier) await cacheSet(`tier:${userKey}`, data.tier, 300);
     return TIER_LIMITS[data?.tier] || 20;
   },
   keyGenerator: (req) => req.headers["x-api-key"] || ipKeyGenerator(req),
@@ -163,7 +181,7 @@ app.post("/:chain", async (req, res) => {
   // ── Redis cache check ────────────────────────────────────────────────────
   if (CACHEABLE_METHODS.includes(method)) {
     const cacheKey = `rpc:${chain}:${JSON.stringify(req.body)}`;
-    const cached = await redis.get(cacheKey);
+    const cached = await cacheGet(cacheKey);
     if (cached) {
       log.cached = true;
       log.latency = 0;
@@ -189,7 +207,7 @@ app.post("/:chain", async (req, res) => {
 
     if (CACHEABLE_METHODS.includes(method) && data && !data.error) {
       const cacheKey = `rpc:${chain}:${JSON.stringify(req.body)}`;
-      await redis.set(cacheKey, JSON.stringify(data), { ex: CACHE_TTL });
+      await cacheSet(cacheKey, JSON.stringify(data), CACHE_TTL);
     }
 
     // Increment request count in Supabase (fire-and-forget)
@@ -303,7 +321,7 @@ app.delete("/keys/:key", authMiddleware, async (req, res) => {
     .eq("user_id", req.user.id);
   if (error) return res.status(500).json({ error: error.message });
   // Invalidate tier cache
-  await redis.del(`tier:${req.params.key}`);
+  await cacheDel(`tier:${req.params.key}`);
   res.json({ success: true });
 });
 
@@ -316,7 +334,7 @@ app.patch("/keys/:key", authMiddleware, async (req, res) => {
     .eq("key", req.params.key)
     .eq("user_id", req.user.id);
   if (error) return res.status(500).json({ error: error.message });
-  await redis.set(`tier:${req.params.key}`, tier, { ex: 300 });
+  await cacheSet(`tier:${req.params.key}`, tier, 300);
   res.json({ apiKey: req.params.key, tier });
 });
 

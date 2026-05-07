@@ -12,8 +12,12 @@ import { useNavigate } from 'react-router-dom';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
-const ADMIN = { headers: { 'x-admin-secret': 'admin123' } };
-const BASE_URL = 'https://rpcforge-production.up.railway.app';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://rpcforge-production.up.railway.app';
+
+const getAuthHeaders = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  return { headers: { Authorization: `Bearer ${session?.access_token}` } };
+};
 
 export default function App() {
   const [tab, setTab] = useState('dashboard');
@@ -37,6 +41,11 @@ export default function App() {
         .then(({ data }) => { setUserRecord(data); })
         .finally(() => setAuthLoading(false));
     });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) navigate('/signup');
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleLogout = async () => {
@@ -56,7 +65,8 @@ export default function App() {
     let cancelled = false;
     function connect() {
       if (cancelled) return;
-      const ws = new WebSocket('wss://rpcforge-production.up.railway.app');
+      const wsUrl = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onopen = () => { if (!cancelled) setWsStatus('live'); };
       ws.onclose = () => { if (!cancelled) { setWsStatus('reconnecting'); setTimeout(connect, 3000); } };
@@ -75,7 +85,11 @@ export default function App() {
   // ── Stats polling ────────────────────────────────────────────────────────
   useEffect(() => {
     const fetch = async () => {
-      try { const r = await axios.get('https://rpcforge-production.up.railway.app/stats', ADMIN); setStats(r.data); } catch {}
+      try { 
+        const headers = await getAuthHeaders();
+        const r = await axios.get(`${BASE_URL}/stats`, headers); 
+        setStats(r.data); 
+      } catch {}
     };
     fetch();
     const id = setInterval(fetch, 5000);
@@ -84,16 +98,22 @@ export default function App() {
 
   // ── Key manager ──────────────────────────────────────────────────────────
   const fetchKeys = async () => {
-    try { const r = await axios.get('https://rpcforge-production.up.railway.app/keys', ADMIN); setKeys(r.data); } catch {}
+    try { 
+      const headers = await getAuthHeaders();
+      const r = await axios.get(`${BASE_URL}/keys`, headers); 
+      setKeys(r.data); 
+    } catch {}
   };
   useEffect(() => { if (tab === 'keys') fetchKeys(); }, [tab]);
 
   const createKey = async (tier) => {
-    await axios.post('https://rpcforge-production.up.railway.app/keys', { tier }, ADMIN);
+    const headers = await getAuthHeaders();
+    await axios.post(`${BASE_URL}/keys`, { tier }, headers);
     fetchKeys();
   };
   const revokeKey = async (key) => {
-    await axios.delete(`https://rpcforge-production.up.railway.app/keys/${key}`, ADMIN);
+    const headers = await getAuthHeaders();
+    await axios.delete(`${BASE_URL}/keys/${key}`, headers);
     fetchKeys();
   };
 

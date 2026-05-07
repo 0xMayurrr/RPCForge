@@ -35,12 +35,10 @@ export default function SignupPage() {
         }
 
         const apiKey = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
-        await supabase.from('users').insert({
-          id: data.user.id,
-          email,
-          tier: plan,
-          api_key: apiKey,
-        });
+        await Promise.all([
+          supabase.from('users').insert({ id: data.user.id, email, tier: plan, api_key: apiKey }),
+          supabase.from('api_keys').insert({ user_id: data.user.id, key: apiKey, tier: plan }),
+        ]);
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -62,7 +60,7 @@ export default function SignupPage() {
     setError('');
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: 'https://rpc-forge.vercel.app/dashboard' }
+      options: { redirectTo: `${window.location.origin}/dashboard` }
     });
     if (error) { setError(error.message); setIsLoading(false); }
   };

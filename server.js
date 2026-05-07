@@ -6,6 +6,8 @@ const cors = require("cors");
 const http = require("http");
 const { WebSocketServer } = require("ws");
 const { v4: uuidv4 } = require("uuid");
+const { createClient } = require("@supabase/supabase-js");
+const { Redis } = require("@upstash/redis");
 
 const app = express();
 const server = http.createServer(app);
@@ -14,7 +16,19 @@ const wss = new WebSocketServer({ server });
 app.use(cors({ origin: ["http://localhost:5173", "https://rpcforge.vercel.app", "https://rpc-forge.vercel.app"] }));
 app.use(express.json());
 
-// ─── Multi-chain nodes from .env ───────────────────────────────────────────
+// ─── Supabase (service role — never exposed to frontend) ──────────────────────
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+
+// ─── Upstash Redis ────────────────────────────────────────────────────────────
+const redis = new Redis({
+  url: process.env.UPSTASH_REST_URL,
+  token: process.env.UPSTASH_REST_TOKEN,
+});
+
+// ─── Multi-chain nodes from .env ──────────────────────────────────────────────
 const CHAINS = {
   eth:      [process.env.ETH_NODE_1,      process.env.ETH_NODE_2].filter(Boolean),
   sepolia:  [process.env.SEPOLIA_NODE_1].filter(Boolean),
@@ -23,37 +37,21 @@ const CHAINS = {
   arbitrum: [process.env.ARBITRUM_NODE_1, process.env.ARBITRUM_NODE_2].filter(Boolean),
 };
 
-// ─── API Keys ────────────────────────────────────────────────────────────────
 const TIER_LIMITS = { free: 20, pro: 100 };
 const BLOCKED_METHODS = ["eth_sendRawTransaction", "eth_sign", "personal_sign"];
 const CACHEABLE_METHODS = ["eth_blockNumber", "eth_chainId", "eth_gasPrice"];
+const CACHE_TTL = parseInt(process.env.CACHE_TTL_SECONDS) || 30;
 
-function buildUsers() {
-  const map = {};
-  const raw = process.env.API_KEYS || "";
-  raw.split(",").forEach((entry) => {
-    const [key, tier = "free"] = entry.trim().split(":");
-    if (key) map[key] = { requests: 0, errors: 0, methods: {}, tier, createdAt: new Date().toISOString() };
-  });
-  return map;
-}
-let users = buildUsers();
-
-// ─── Cache ───────────────────────────────────────────────────────────────────
-const cache = new Map();
-const CACHE_TTL = (parseInt(process.env.CACHE_TTL_SECONDS) || 10) * 1000;
-
-// ─── Logs ────────────────────────────────────────────────────────────────────
-const logs = [];
-const MAX_LOGS = parseInt(process.env.MAX_LOGS) || 1000;
+// ─── In-memory recent logs for WebSocket broadcast only ──────────────────────
+const recentLogs = [];
 
 function pushLog(entry) {
-  logs.unshift(entry);
-  if (logs.length > MAX_LOGS) logs.pop();
+  recentLogs.unshift(entry);
+  if (recentLogs.length > 100) recentLogs.pop();
   broadcast(entry);
 }
 
-// ─── WebSocket broadcast ─────────────────────────────────────────────────────
+// ─── WebSocket broadcast ──────────────────────────────────────────────────────
 function broadcast(data) {
   const msg = JSON.stringify(data);
   wss.clients.forEach((client) => {
@@ -62,10 +60,20 @@ function broadcast(data) {
 }
 
 wss.on("connection", (ws) => {
-  ws.send(JSON.stringify({ type: "init", logs: logs.slice(0, 50) }));
+  ws.send(JSON.stringify({ type: "init", logs: recentLogs.slice(0, 50) }));
 });
 
-// ─── Retry / Failover ────────────────────────────────────────────────────────
+// ─── Supabase JWT auth middleware (replaces x-admin-secret) ──────────────────
+async function authMiddleware(req, res, next) {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return res.status(401).json({ error: "Unauthorized" });
+  req.user = user;
+  next();
+}
+
+// ─── Retry / Failover ─────────────────────────────────────────────────────────
 async function forwardWithRetry(body, chain = "eth") {
   const nodes = CHAINS[chain] || CHAINS.eth;
   const shuffled = [...nodes].sort(() => Math.random() - 0.5);
@@ -81,32 +89,34 @@ async function forwardWithRetry(body, chain = "eth") {
   throw lastErr;
 }
 
-// ─── Per-key dynamic rate limiter ────────────────────────────────────────────
+// ─── Per-key Redis rate limiter ───────────────────────────────────────────────
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: (req) => {
-    const user = users[req.headers["x-api-key"]];
-    return user ? TIER_LIMITS[user.tier] || 20 : 20;
+  max: async (req) => {
+    const userKey = req.headers["x-api-key"];
+    if (!userKey) return 20;
+    const cached = await redis.get(`tier:${userKey}`);
+    if (cached) return TIER_LIMITS[cached] || 20;
+    const { data } = await supabase
+      .from("api_keys")
+      .select("tier")
+      .eq("key", userKey)
+      .eq("is_active", true)
+      .single();
+    if (data?.tier) await redis.set(`tier:${userKey}`, data.tier, { ex: 300 });
+    return TIER_LIMITS[data?.tier] || 20;
   },
   keyGenerator: (req) => req.headers["x-api-key"] || ipKeyGenerator(req),
   message: { error: "Rate limit exceeded. Too many requests." },
 });
 app.use(limiter);
 
-// ─── Admin auth middleware ────────────────────────────────────────────────────
-function adminAuth(req, res, next) {
-  if (req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  next();
-}
-
-// ─── Health check (public) ───────────────────────────────────────────────────
+// ─── Health check (public) ────────────────────────────────────────────────────
 app.get("/health", (req, res) => {
   res.json({ status: "ok", uptime: Math.floor(process.uptime()), chains: Object.keys(CHAINS) });
 });
 
-// ─── Chains info (public) ────────────────────────────────────────────────────
+// ─── Chains info (public) ─────────────────────────────────────────────────────
 app.get("/chains", (req, res) => {
   res.json(Object.keys(CHAINS).map(chain => ({
     chain,
@@ -123,16 +133,21 @@ app.post("/:chain", async (req, res) => {
   const userKey = req.headers["x-api-key"];
   const method = req.body.method;
 
-  if (!userKey || !users[userKey]) {
-    return res.status(403).json({ error: "Invalid or missing API Key" });
-  }
+  if (!userKey) return res.status(403).json({ error: "Missing API Key" });
+
+  // Validate key against Supabase
+  const { data: keyRecord, error: keyError } = await supabase
+    .from("api_keys")
+    .select("id, user_id, tier, is_active")
+    .eq("key", userKey)
+    .eq("is_active", true)
+    .single();
+
+  if (keyError || !keyRecord) return res.status(403).json({ error: "Invalid or missing API Key" });
 
   if (BLOCKED_METHODS.includes(method)) {
     return res.status(403).json({ error: `Method ${method} is not allowed` });
   }
-
-  users[userKey].requests += 1;
-  users[userKey].methods[method] = (users[userKey].methods[method] || 0) + 1;
 
   const log = {
     id: uuidv4(),
@@ -145,119 +160,172 @@ app.post("/:chain", async (req, res) => {
     latency: null,
   };
 
-  // Cache check
+  // ── Redis cache check ────────────────────────────────────────────────────
   if (CACHEABLE_METHODS.includes(method)) {
-    const cacheKey = JSON.stringify(req.body);
-    if (cache.has(cacheKey)) {
-      const hit = cache.get(cacheKey);
-      if (Date.now() - hit.timestamp < CACHE_TTL) {
-        log.cached = true;
-        log.latency = 0;
-        pushLog(log);
-        return res.json(hit.response);
-      }
-      cache.delete(cacheKey);
+    const cacheKey = `rpc:${chain}:${JSON.stringify(req.body)}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      log.cached = true;
+      log.latency = 0;
+      pushLog(log);
+      // fire-and-forget log insert
+      supabase.from("request_logs").insert({
+        api_key: userKey,
+        user_id: keyRecord.user_id,
+        method,
+        chain,
+        cache_hit: true,
+        status: 200,
+        response_time_ms: 0,
+      }).then(() => {});
+      return res.json(typeof cached === "string" ? JSON.parse(cached) : cached);
     }
   }
 
   const start = Date.now();
   try {
     const data = await forwardWithRetry(req.body, chain);
+    const latency = Date.now() - start;
 
     if (CACHEABLE_METHODS.includes(method) && data && !data.error) {
-      cache.set(JSON.stringify(req.body), { response: data, timestamp: Date.now() });
+      const cacheKey = `rpc:${chain}:${JSON.stringify(req.body)}`;
+      await redis.set(cacheKey, JSON.stringify(data), { ex: CACHE_TTL });
     }
 
-    log.latency = Date.now() - start;
+    // Increment request count in Supabase (fire-and-forget)
+    supabase.rpc("increment_key_requests", { key_id: keyRecord.id }).then(() => {});
+
+    log.latency = latency;
     pushLog(log);
+
+    supabase.from("request_logs").insert({
+      api_key: userKey,
+      user_id: keyRecord.user_id,
+      method,
+      chain,
+      cache_hit: false,
+      status: 200,
+      response_time_ms: latency,
+    }).then(() => {});
+
     res.json(data);
   } catch (err) {
-    users[userKey].errors += 1;
+    const latency = Date.now() - start;
     log.error = true;
-    log.latency = Date.now() - start;
+    log.latency = latency;
     pushLog(log);
+
+    supabase.rpc("increment_key_errors", { key_id: keyRecord.id }).then(() => {});
+    supabase.from("request_logs").insert({
+      api_key: userKey,
+      user_id: keyRecord.user_id,
+      method,
+      chain,
+      cache_hit: false,
+      status: 500,
+      response_time_ms: latency,
+    }).then(() => {});
+
     console.error(`[RPCForge] RPC Error on ${chain}:`, err.message);
     res.status(500).json({ error: "Error forwarding request" });
   }
 });
 
-// ─── Logs (protected) ────────────────────────────────────────────────────────
-app.get("/logs", adminAuth, (req, res) => {
-  const { chain, limit = 500 } = req.query;
-  const filtered = chain ? logs.filter(l => l.chain === chain) : logs;
-  res.json(filtered.slice(0, parseInt(limit)));
-});
+// ─── Stats (JWT protected) ────────────────────────────────────────────────────
+app.get("/stats", authMiddleware, async (req, res) => {
+  const [keysRes, logsRes] = await Promise.all([
+    supabase.from("api_keys").select("key, tier, request_count, error_count, is_active").eq("user_id", req.user.id),
+    supabase.from("request_logs").select("method, cache_hit, status").eq("user_id", req.user.id),
+  ]);
 
-// ─── Stats (protected) ───────────────────────────────────────────────────────
-app.get("/stats", adminAuth, (req, res) => {
-  let totalRequests = 0, totalErrors = 0;
-  const overallMethods = {};
+  const keys = keysRes.data || [];
+  const logs = logsRes.data || [];
 
-  for (const user of Object.values(users)) {
-    totalRequests += user.requests;
-    totalErrors += user.errors;
-    for (const [m, count] of Object.entries(user.methods)) {
-      overallMethods[m] = (overallMethods[m] || 0) + count;
-    }
-  }
+  const totalRequests = keys.reduce((s, k) => s + (k.request_count || 0), 0);
+  const totalErrors = keys.reduce((s, k) => s + (k.error_count || 0), 0);
 
-  const mostUsedMethods = Object.entries(overallMethods)
+  const methodMap = {};
+  logs.forEach(l => { methodMap[l.method] = (methodMap[l.method] || 0) + 1; });
+  const mostUsedMethods = Object.entries(methodMap)
     .sort((a, b) => b[1] - a[1])
-    .map(([method, count]) => ({ name: method, count }));
+    .map(([name, count]) => ({ name, count }));
 
-  const formattedUsers = Object.entries(users).map(([key, data]) => ({
-    apiKey: key,
-    requests: data.requests,
-    errors: data.errors,
-    tier: data.tier,
-  }));
-
-  res.json({ totalRequests, totalErrors, users: formattedUsers, mostUsedMethods });
+  res.json({
+    totalRequests,
+    totalErrors,
+    users: keys.map(k => ({ apiKey: k.key, tier: k.tier, requests: k.request_count, errors: k.error_count })),
+    mostUsedMethods,
+  });
 });
 
-// ─── Cache clear (protected) ─────────────────────────────────────────────────
-app.delete("/cache", adminAuth, (req, res) => {
-  const size = cache.size;
-  cache.clear();
-  res.json({ success: true, cleared: size });
+// ─── Logs (JWT protected) ─────────────────────────────────────────────────────
+app.get("/logs", authMiddleware, async (req, res) => {
+  const { chain, limit = 200 } = req.query;
+  let query = supabase
+    .from("request_logs")
+    .select("*")
+    .eq("user_id", req.user.id)
+    .order("created_at", { ascending: false })
+    .limit(parseInt(limit));
+  if (chain) query = query.eq("chain", chain);
+  const { data } = await query;
+  res.json(data || []);
 });
 
-// ─── API Key Manager (protected) ─────────────────────────────────────────────
-app.get("/keys", adminAuth, (req, res) => {
-  res.json(
-    Object.entries(users).map(([key, data]) => ({
-      apiKey: key,
-      tier: data.tier,
-      requests: data.requests,
-      errors: data.errors,
-    }))
-  );
+// ─── API Keys (JWT protected) ─────────────────────────────────────────────────
+app.get("/keys", authMiddleware, async (req, res) => {
+  const { data } = await supabase
+    .from("api_keys")
+    .select("key, tier, request_count, error_count, created_at")
+    .eq("user_id", req.user.id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  res.json((data || []).map(k => ({ apiKey: k.key, tier: k.tier, requests: k.request_count, errors: k.error_count })));
 });
 
-app.post("/keys", adminAuth, (req, res) => {
+app.post("/keys", authMiddleware, async (req, res) => {
   const { tier = "free" } = req.body;
   const newKey = uuidv4().replace(/-/g, "").slice(0, 16);
-  users[newKey] = { requests: 0, errors: 0, methods: {}, tier, createdAt: new Date().toISOString() };
-  res.json({ apiKey: newKey, tier });
+  const { data, error } = await supabase.from("api_keys").insert({
+    user_id: req.user.id,
+    key: newKey,
+    tier,
+  }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ apiKey: data.key, tier: data.tier });
 });
 
-app.delete("/keys/:key", adminAuth, (req, res) => {
-  const { key } = req.params;
-  if (!users[key]) return res.status(404).json({ error: "Key not found" });
-  delete users[key];
+app.delete("/keys/:key", authMiddleware, async (req, res) => {
+  const { error } = await supabase
+    .from("api_keys")
+    .update({ is_active: false })
+    .eq("key", req.params.key)
+    .eq("user_id", req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  // Invalidate tier cache
+  await redis.del(`tier:${req.params.key}`);
   res.json({ success: true });
 });
 
-app.patch("/keys/:key", adminAuth, (req, res) => {
-  const { key } = req.params;
+app.patch("/keys/:key", authMiddleware, async (req, res) => {
   const { tier } = req.body;
-  if (!users[key]) return res.status(404).json({ error: "Key not found" });
   if (!TIER_LIMITS[tier]) return res.status(400).json({ error: "Invalid tier" });
-  users[key].tier = tier;
-  res.json({ apiKey: key, tier });
+  const { error } = await supabase
+    .from("api_keys")
+    .update({ tier })
+    .eq("key", req.params.key)
+    .eq("user_id", req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  await redis.set(`tier:${req.params.key}`, tier, { ex: 300 });
+  res.json({ apiKey: req.params.key, tier });
 });
 
-// ─── Start ───────────────────────────────────────────────────────────────────
+// ─── Cache clear (JWT protected) ──────────────────────────────────────────────
+app.delete("/cache", authMiddleware, async (req, res) => {
+  res.json({ success: true, message: "Use Upstash dashboard to flush Redis cache" });
+});
+
+// ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`RPCForge 🚀 running on port ${PORT}`);

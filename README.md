@@ -3,7 +3,7 @@
 <img src="https://img.shields.io/badge/RPCForge-Live-6467f2?style=for-the-badge&logo=ethereum&logoColor=white" />
 <img src="https://img.shields.io/badge/Node.js-20-339933?style=for-the-badge&logo=node.js&logoColor=white" />
 <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
-<img src="https://img.shields.io/badge/Deployed-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" />
+<img src="https://img.shields.io/badge/Deployed-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white" />
 <img src="https://img.shields.io/badge/Frontend-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" />
 <a href="https://www.npmjs.com/package/rpcforge-cli"><img src="https://img.shields.io/npm/v/rpcforge-cli?style=for-the-badge&logo=npm&logoColor=white&color=CB3837" /></a>
 
@@ -18,7 +18,7 @@
   ╚═╝  ╚═╝╚═╝      ╚═════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
 ```
 
-### Your Personal Multi-Chain Ethereum RPC Provider
+### Multi-chain Ethereum RPC you own and control
 
 **[Live Demo](https://rpc-forge.vercel.app)** · **[Dashboard](https://rpc-forge.vercel.app/dashboard)** · **[API Docs](#api-reference)**
 
@@ -28,7 +28,7 @@
 
 ## ⚡ Why RPCForge?
 
-**The Problem**: 
+**The Problem**:
 - Infura/Alchemy charge per request and lock you into their platform
 - No visibility into your RPC traffic
 - Rate limits kill your dApp during peak usage
@@ -49,10 +49,10 @@ RPCForge gives you enterprise-grade RPC infrastructure you can self-host in 5 mi
 
 **Live Instance**: [rpc-forge.vercel.app](https://rpc-forge.vercel.app)  
 **Dashboard**: [rpc-forge.vercel.app/dashboard](https://rpc-forge.vercel.app/dashboard)  
-**Test Endpoint**: 
+**Test Endpoint**:
 ```bash
-curl -X POST https://rpcforge-production.up.railway.app/eth \
-  -H "x-api-key: demo_key_12345" \
+curl -X POST https://rpcforge.onrender.com/eth \
+  -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
@@ -69,7 +69,7 @@ If RPCForge saves you money or helps your project, give us a star! It helps othe
 
 ## What is RPCForge?
 
-RPCForge is a self-hostable, production-ready RPC gateway that sits in front of your Ethereum nodes. It gives you a single, reliable endpoint with API key auth, per-tier rate limiting, method blacklisting, response caching, multi-node failover, and a real-time WebSocket dashboard — all in one.
+RPCForge is a self-hostable, production-ready RPC gateway that sits in front of your Ethereum nodes. It gives you a single, reliable endpoint with API key auth, per-tier rate limiting, method blacklisting, response caching, multi-node failover, Stripe billing, and a real-time WebSocket dashboard — all in one.
 
 Built for developers who want **Infura/Alchemy-level features** without the vendor lock-in.
 
@@ -81,14 +81,26 @@ Built for developers who want **Infura/Alchemy-level features** without the vend
 |---|---|
 | **Multi-chain Support** | Ethereum, Polygon, BSC, Arbitrum, Sepolia out of the box |
 | **Multi-node Failover** | Shuffles across your configured nodes, retries on failure |
-| **Per-key Rate Limiting** | Free tier: 20 req/min · Pro tier: 100 req/min |
-| **Response Caching** | 10s TTL cache for `eth_blockNumber`, `eth_chainId`, `eth_gasPrice` |
+| **Per-key Rate Limiting** | Free: 20 · Dev: 60 · Pro: 200 · Team: 500 req/min |
+| **Response Caching** | TTL cache for `eth_blockNumber`, `eth_chainId`, `eth_gasPrice` |
 | **Method Blacklist** | Blocks `eth_sendRawTransaction`, `eth_sign`, `personal_sign` by default |
 | **Real-time Dashboard** | WebSocket-powered live feed, charts, and stats |
-| **API Key Manager** | Create, revoke, and upgrade keys via UI or CLI |
-| **Auth via Supabase** | Email/password + Google OAuth, per-user API key provisioning |
+| **Stripe Billing** | Free / Dev / Pro / Team plans with Stripe Checkout + Customer Portal |
+| **API Key Manager** | Create, revoke, and manage keys via UI |
+| **Auth via Supabase** | Email/password auth, per-user API key provisioning |
 | **CLI Tool** | Full-featured terminal interface for power users |
 | **Docker Ready** | One command to spin up the full stack |
+
+---
+
+## Pricing
+
+| Plan | Price | Requests/day | Rate limit |
+|---|---|---|---|
+| Free | $0 | 100k | 20 req/min |
+| Dev | $9/mo | 1M | 60 req/min |
+| Pro | $29/mo | 10M | 200 req/min |
+| Team | $99/mo | Unlimited | 500 req/min |
 
 ---
 
@@ -106,7 +118,7 @@ Built for developers who want **Infura/Alchemy-level features** without the vend
 │                                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
 │  │ API Key  │  │  Rate    │  │ Method   │  │   Cache   │  │
-│  │  Auth    │→ │ Limiter  │→ │Blacklist │→ │  (10s TTL)│  │
+│  │  Auth    │→ │ Limiter  │→ │Blacklist │→ │  (TTL)    │  │
 │  └──────────┘  └──────────┘  └──────────┘  └─────┬─────┘  │
 │                                                   │        │
 │  ┌────────────────────────────────────────────────▼──────┐ │
@@ -144,8 +156,8 @@ mini-rpc-provider/
 │   └── src/
 │       ├── App.jsx        # Router (/, /signup, /dashboard)
 │       ├── LandingPage.jsx
-│       ├── SignupPage.jsx  # Supabase auth (email + Google)
-│       ├── Dashboard.jsx   # Live stats, logs, key manager
+│       ├── SignupPage.jsx  # Supabase auth (email/password)
+│       ├── Dashboard.jsx   # Live stats, logs, key manager, billing
 │       └── supabase.js
 │
 └── cli/                   # Node.js CLI tool
@@ -160,8 +172,8 @@ mini-rpc-provider/
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/your-username/mini-rpc-provider.git
-cd mini-rpc-provider
+git clone https://github.com/0xMayurrr/RPCForge.git
+cd RPCForge
 npm install
 ```
 
@@ -169,7 +181,9 @@ npm install
 
 ```env
 PORT=3000
-ADMIN_SECRET=your_admin_secret
+
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your_service_role_key
 
 # Add your node URLs (Infura, Alchemy, or public nodes)
 ETH_NODE_1=https://mainnet.infura.io/v3/<YOUR_KEY>
@@ -186,8 +200,13 @@ BSC_NODE_2=https://bsc-dataseed1.defibit.io
 ARBITRUM_NODE_1=https://arb1.arbitrum.io/rpc
 ARBITRUM_NODE_2=https://arbitrum-one.publicnode.com
 
-# Format: key:tier,key:tier
-API_KEYS=mykey123:free,prokey456:pro
+# Stripe billing
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_DEV=price_...
+STRIPE_PRICE_PRO=price_...
+STRIPE_PRICE_TEAM=price_...
+FRONTEND_URL=http://localhost:5173
 ```
 
 ### 3. Start the Server
@@ -216,14 +235,15 @@ docker-compose up --build
 
 ## 📦 One-Click Deploy
 
-### Deploy Backend (Railway)
+### Deploy Backend (Render)
 
-1. Click the button below:
-   
-   [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/rpcforge)
-
-2. Add your environment variables in Railway dashboard
-3. Copy your Railway URL
+1. Go to [render.com](https://render.com) → New → Web Service
+2. Connect your GitHub repo
+3. Set:
+   - Build Command: `npm install`
+   - Start Command: `node server.js`
+4. Add all environment variables from `.env`
+5. Deploy — you'll get a URL like `https://rpcforge.onrender.com`
 
 ### Deploy Frontend (Vercel)
 
@@ -232,17 +252,10 @@ docker-compose up --build
 3. Set environment variables:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_API_BASE_URL` (your Railway backend URL)
+   - `VITE_API_BASE_URL` (your Render backend URL)
 
 ### Docker Deployment
 ```bash
-# Pull from Docker Hub
-docker pull yourusername/rpcforge:latest
-
-# Run with environment file
-docker run -p 3000:3000 --env-file .env yourusername/rpcforge:latest
-
-# Or use docker-compose
 docker-compose up -d
 ```
 
@@ -255,16 +268,15 @@ docker-compose up -d
 import { ethers } from "ethers";
 
 const provider = new ethers.JsonRpcProvider(
-  "https://rpcforge-production.up.railway.app/eth",
+  "https://rpcforge.onrender.com/eth",
   undefined,
-  { 
+  {
     fetchOptions: {
-      headers: { "x-api-key": "YOUR_API_KEY" } 
+      headers: { "x-api-key": "YOUR_API_KEY" }
     }
   }
 );
 
-// Use it like any provider
 const blockNumber = await provider.getBlockNumber();
 const balance = await provider.getBalance("0x...");
 ```
@@ -276,7 +288,7 @@ import { mainnet } from 'viem/chains';
 
 const client = createPublicClient({
   chain: mainnet,
-  transport: http("https://rpcforge-production.up.railway.app/eth", {
+  transport: http("https://rpcforge.onrender.com/eth", {
     fetchOptions: {
       headers: { "x-api-key": "YOUR_API_KEY" }
     }
@@ -294,13 +306,13 @@ import { mainnet, polygon, arbitrum } from 'wagmi/chains';
 export const config = createConfig({
   chains: [mainnet, polygon, arbitrum],
   transports: {
-    [mainnet.id]: http("https://rpcforge-production.up.railway.app/eth", {
+    [mainnet.id]: http("https://rpcforge.onrender.com/eth", {
       fetchOptions: { headers: { "x-api-key": "YOUR_KEY" }}
     }),
-    [polygon.id]: http("https://rpcforge-production.up.railway.app/polygon", {
+    [polygon.id]: http("https://rpcforge.onrender.com/polygon", {
       fetchOptions: { headers: { "x-api-key": "YOUR_KEY" }}
     }),
-    [arbitrum.id]: http("https://rpcforge-production.up.railway.app/arbitrum", {
+    [arbitrum.id]: http("https://rpcforge.onrender.com/arbitrum", {
       fetchOptions: { headers: { "x-api-key": "YOUR_KEY" }}
     }),
   },
@@ -315,12 +327,12 @@ require("@nomiclabs/hardhat-ethers");
 module.exports = {
   networks: {
     mainnet: {
-      url: "https://rpcforge-production.up.railway.app/eth",
+      url: "https://rpcforge.onrender.com/eth",
       headers: { "x-api-key": process.env.RPCFORGE_API_KEY },
       accounts: [process.env.PRIVATE_KEY]
     },
     polygon: {
-      url: "https://rpcforge-production.up.railway.app/polygon",
+      url: "https://rpcforge.onrender.com/polygon",
       headers: { "x-api-key": process.env.RPCFORGE_API_KEY },
       accounts: [process.env.PRIVATE_KEY]
     }
@@ -374,12 +386,6 @@ Vote on features in [GitHub Discussions](https://github.com/0xMayurrr/RPCForge/d
 
 ---
 
-## 📊 Performance Benchmarks
-
-*(Add benchmarks showing RPCForge vs Infura/Alchemy in terms of latency, uptime, cost)*
-
----
-
 ## ⚖️ License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -393,7 +399,8 @@ Built with ❤️ for the Ethereum community
 Special thanks to:
 - [ethers.js](https://docs.ethers.org/) and [viem](https://viem.sh/) teams
 - [Supabase](https://supabase.com/) for auth infrastructure
-- [Railway](https://railway.app/) and [Vercel](https://vercel.com/) for hosting
+- [Render](https://render.com/) and [Vercel](https://vercel.com/) for hosting
+- [Stripe](https://stripe.com/) for billing infrastructure
 
 ---
 
@@ -431,7 +438,7 @@ All RPC requests go to `POST /{chain}` with your API key in the header.
 ### Make an RPC Request
 
 ```bash
-curl -X POST https://rpcforge-production.up.railway.app/eth \
+curl -X POST https://rpcforge.onrender.com/eth \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
@@ -441,7 +448,7 @@ curl -X POST https://rpcforge-production.up.railway.app/eth \
 
 ```js
 const provider = new ethers.JsonRpcProvider(
-  "https://rpcforge-production.up.railway.app/eth",
+  "https://rpcforge.onrender.com/eth",
   undefined,
   { headers: { "x-api-key": "YOUR_API_KEY" } }
 );
@@ -450,7 +457,7 @@ const provider = new ethers.JsonRpcProvider(
 ### viem
 
 ```js
-const transport = http("https://rpcforge-production.up.railway.app/eth", {
+const transport = http("https://rpcforge.onrender.com/eth", {
   fetchOptions: { headers: { "x-api-key": "YOUR_API_KEY" } }
 });
 ```
@@ -461,7 +468,7 @@ const transport = http("https://rpcforge-production.up.railway.app/eth", {
 // hardhat.config.js
 networks: {
   mainnet: {
-    url: "https://rpcforge-production.up.railway.app/eth",
+    url: "https://rpcforge.onrender.com/eth",
     headers: { "x-api-key": "YOUR_API_KEY" }
   }
 }
@@ -471,17 +478,20 @@ networks: {
 
 ## Admin API
 
-All admin routes require the `x-admin-secret` header.
+All admin routes require a valid JWT Bearer token (`Authorization: Bearer <token>`).
 
 | Method | Route | Description |
 |---|---|---|
 | `GET` | `/stats` | Total requests, errors, top methods |
-| `GET` | `/logs` | Last 500 request logs |
+| `GET` | `/logs` | Last 200 request logs |
 | `GET` | `/keys` | List all API keys |
-| `POST` | `/keys` | Create a key `{ tier: "free" \| "pro" }` |
+| `POST` | `/keys` | Create a key `{ tier: "free" \| "dev" \| "pro" \| "team" }` |
 | `DELETE` | `/keys/:key` | Revoke a key |
-| `PATCH` | `/keys/:key` | Upgrade/downgrade tier `{ tier: "pro" }` |
+| `PATCH` | `/keys/:key` | Upgrade/downgrade tier |
 | `GET` | `/chains` | List supported chains and node counts |
+| `POST` | `/billing/create-checkout` | Create Stripe Checkout session |
+| `POST` | `/billing/create-portal` | Open Stripe Customer Portal |
+| `GET` | `/billing/status` | Get current plan and status |
 
 ---
 
@@ -501,8 +511,6 @@ npm install -g rpcforge-cli
 rpcforge init
 ```
 
-That's it. The CLI will walk you through picking a chain, generating or validating your API key, and print ready-to-use code snippets for ethers.js, curl, and Hardhat.
-
 ### All commands
 
 | Command | Description |
@@ -510,35 +518,9 @@ That's it. The CLI will walk you through picking a chain, generating or validati
 | `rpcforge init` | Setup your endpoint & get usage examples |
 | `rpcforge test` | Send a live `eth_blockNumber` test request |
 | `rpcforge keys` | List all API keys |
-| `rpcforge keys create` | Create a new API key (free or pro) |
+| `rpcforge keys create` | Create a new API key |
 | `rpcforge keys revoke` | Revoke an API key |
 | `rpcforge stats` | Show total requests, errors, top methods |
-
-### Windows users — if `rpcforge` is not recognized
-
-After installing, if you see `'rpcforge' is not recognized`, npm's global bin folder isn't in your PATH. Fix it by running this in cmd **as Administrator**:
-
-```cmd
-setx PATH "%PATH%;%APPDATA%\npm" /M
-```
-
-Then close and reopen your terminal. Alternatively, use npx without any install:
-
-```cmd
-npx rpcforge-cli init
-```
-
-### Optional: set your admin secret as an env var
-
-So you're not prompted every time you run `keys` or `stats`:
-
-```bash
-# macOS / Linux — add to ~/.bashrc or ~/.zshrc
-export RPCFORGE_ADMIN_SECRET=your_secret_here
-
-# Windows cmd
-setx RPCFORGE_ADMIN_SECRET your_secret_here
-```
 
 ---
 
@@ -547,7 +529,9 @@ setx RPCFORGE_ADMIN_SECRET your_secret_here
 | Tier | Requests / min |
 |---|---|
 | Free | 20 |
-| Pro | 100 |
+| Dev | 60 |
+| Pro | 200 |
+| Team | 500 |
 
 Exceeding the limit returns:
 ```json
@@ -568,12 +552,12 @@ The following methods are blocked by default to prevent abuse:
 
 ## Deployment
 
-### Backend → Railway
+### Backend → Render
 
 1. Push to GitHub
-2. Create a new Railway project → Deploy from GitHub
-3. Add all `.env` variables in Railway's environment settings
-4. Railway auto-detects the `Dockerfile` and deploys
+2. Create a new Render Web Service → Deploy from GitHub
+3. Add all `.env` variables in Render's environment settings
+4. Start command: `node server.js`
 
 ### Frontend → Vercel
 
@@ -582,7 +566,7 @@ cd frontend
 vercel --prod
 ```
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel's environment variables.
+Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_BASE_URL` in Vercel's environment variables.
 
 ---
 
@@ -593,6 +577,7 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel's environment var
 - WebSocket (`ws`)
 - `express-rate-limit` for per-key throttling
 - `axios` for upstream node forwarding
+- `stripe` for billing
 - `uuid` for log IDs
 
 **Frontend**
@@ -607,9 +592,10 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel's environment var
 
 **Infrastructure**
 - Docker + Docker Compose
-- Railway (backend)
+- Render (backend)
 - Vercel (frontend)
 - Supabase (auth + database)
+- Stripe (billing)
 
 ---
 
@@ -618,13 +604,19 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel's environment var
 | Variable | Description |
 |---|---|
 | `PORT` | Server port (default: 3000) |
-| `ADMIN_SECRET` | Secret for admin API routes |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key |
 | `ETH_NODE_1` / `ETH_NODE_2` | Ethereum mainnet node URLs |
 | `SEPOLIA_NODE_1` | Sepolia testnet node URL |
 | `POLYGON_NODE_1` / `POLYGON_NODE_2` | Polygon node URLs |
 | `BSC_NODE_1` / `BSC_NODE_2` | BSC node URLs |
 | `ARBITRUM_NODE_1` / `ARBITRUM_NODE_2` | Arbitrum node URLs |
-| `API_KEYS` | Comma-separated `key:tier` pairs |
+| `STRIPE_SECRET_KEY` | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
+| `STRIPE_PRICE_DEV` | Stripe Price ID for Dev plan |
+| `STRIPE_PRICE_PRO` | Stripe Price ID for Pro plan |
+| `STRIPE_PRICE_TEAM` | Stripe Price ID for Team plan |
+| `FRONTEND_URL` | Your frontend URL for Stripe redirects |
 
 ---
 

@@ -6,7 +6,7 @@ import {
   LineElement, Tooltip, Filler
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { Layers, LayoutDashboard, Terminal, Key, Download, LogOut, Copy } from 'lucide-react';
+import { Layers, LayoutDashboard, Terminal, Key, Download, LogOut, Copy, CreditCard } from 'lucide-react';
 import { supabase } from './supabase';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,6 +31,9 @@ export default function App() {
   const [keyLoading, setKeyLoading] = useState(false);
   const [keyError, setKeyError] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
+  const [billing, setBilling] = useState({ plan: 'free', status: 'active', current_period_end: null });
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [toast, setToast] = useState(null);
   const wsRef = useRef(null);
 
   const navigate = useNavigate();
@@ -48,6 +51,58 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ── Payment toast from URL params ────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
+    if (payment === 'success') {
+      setToast({ msg: 'Subscription activated!', color: 'emerald' });
+      window.history.replaceState({}, '', '/dashboard');
+    } else if (payment === 'cancelled') {
+      setToast({ msg: 'Payment cancelled', color: 'slate' });
+      window.history.replaceState({}, '', '/dashboard');
+    }
+    if (payment) setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // ── Fetch billing status ─────────────────────────────────────────────────
+  const fetchBilling = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const r = await axios.get(`${BASE_URL}/billing/status`, headers);
+      setBilling(r.data);
+    } catch {}
+  };
+  useEffect(() => { if (tab === 'billing') fetchBilling(); }, [tab]);
+
+  const startCheckout = async (plan) => {
+    setBillingLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      const r = await axios.post(`${BASE_URL}/billing/create-checkout`, { plan }, headers);
+      window.location.href = r.data.url;
+    } catch (e) {
+      setToast({ msg: e?.response?.data?.error || 'Checkout failed', color: 'red' });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setBillingLoading(false);
+    }
+  };
+
+  const openPortal = async () => {
+    setBillingLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      const r = await axios.post(`${BASE_URL}/billing/create-portal`, {}, headers);
+      window.location.href = r.data.url;
+    } catch (e) {
+      setToast({ msg: e?.response?.data?.error || 'Portal failed', color: 'red' });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setBillingLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -225,6 +280,7 @@ export default function App() {
               { id: 'dashboard', icon: <LayoutDashboard className="size-5" />, label: 'Dashboard' },
               { id: 'logs', icon: <Terminal className="size-5" />, label: 'Network Logs' },
               { id: 'keys', icon: <Key className="size-5" />, label: 'API Keys' },
+              { id: 'billing', icon: <CreditCard className="size-5" />, label: 'Billing' },
             ].map(({ id, icon, label }) => (
               <button key={id} onClick={() => setTab(id)}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors w-full text-left ${tab === id ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
@@ -247,8 +303,8 @@ export default function App() {
                 </div>
                 {copied && <p className="text-[10px] text-emerald-400 text-center">Copied!</p>}
                 <span className={`text-[10px] font-bold text-center px-2 py-0.5 rounded mt-1 ${
-                  userRecord.tier === 'pro' ? 'bg-primary/20 text-primary' : 'bg-white/5 text-slate-400'
-                }`}>{userRecord.tier.toUpperCase()} TIER</span>
+                  billing.plan === 'free' ? 'bg-white/5 text-slate-400' : 'bg-primary/20 text-primary'
+                }`}>{billing.plan.toUpperCase()} TIER</span>
               </div>
               <button onClick={handleLogout}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors w-full">
@@ -457,8 +513,83 @@ export default function App() {
             </div>
           )}
 
+          {/* ── BILLING TAB ── */}
+          {tab === 'billing' && (() => {
+            const plans = [
+              { id: 'dev', label: 'Dev', price: '$9/mo', requests: '1M req/day', rate: '60 req/min' },
+              { id: 'pro', label: 'Pro', price: '$29/mo', requests: '10M req/day', rate: '200 req/min' },
+              { id: 'team', label: 'Team', price: '$99/mo', requests: 'Unlimited', rate: '500 req/min' },
+            ];
+            return (
+              <div className="flex flex-col gap-6">
+                {/* Current plan */}
+                <div className="glass-panel p-6 rounded-xl flex items-center justify-between">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs text-slate-400">Current Plan</p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl font-bold text-white capitalize">{billing.plan}</span>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
+                        billing.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}>{billing.status.toUpperCase()}</span>
+                    </div>
+                    {billing.current_period_end && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Renews {new Date(billing.current_period_end).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  {billing.plan !== 'free' && (
+                    <button onClick={openPortal} disabled={billingLoading}
+                      className="px-4 py-2 text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors disabled:opacity-50">
+                      Manage / Cancel
+                    </button>
+                  )}
+                </div>
+
+                {/* Plan cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {plans.map(p => {
+                    const isCurrent = billing.plan === p.id;
+                    return (
+                      <div key={p.id} className={`glass-panel p-6 rounded-xl flex flex-col gap-4 border ${
+                        isCurrent ? 'border-primary/40' : 'border-white/5'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-bold text-white">{p.label}</span>
+                          <span className="text-lg font-bold text-primary">{p.price}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 text-xs text-slate-400">
+                          <span>📦 {p.requests}</span>
+                          <span>⚡ {p.rate}</span>
+                        </div>
+                        {isCurrent
+                          ? <span className="text-center text-[11px] font-bold text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded">Current Plan</span>
+                          : <button onClick={() => startCheckout(p.id)} disabled={billingLoading}
+                              className="px-3 py-1.5 text-xs font-semibold bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary rounded transition-colors disabled:opacity-50">
+                              {billingLoading ? 'Loading...' : `Upgrade to ${p.label}`}
+                            </button>
+                        }
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
         </div>
       </main>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg text-sm font-semibold shadow-lg border ${
+          toast.color === 'emerald' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+          : toast.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20'
+          : 'bg-white/5 text-slate-300 border-white/10'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
     </div>
   );
 }

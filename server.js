@@ -8,6 +8,11 @@ const { WebSocketServer } = require("ws");
 const { v4: uuidv4 } = require("uuid");
 const { createClient } = require("@supabase/supabase-js");
 const { Redis } = require("@upstash/redis");
+const Stripe = require("stripe");
+
+const stripe = process.env.STRIPE_SECRET_KEY?.startsWith('sk_')
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
 
 const app = express();
 const server = http.createServer(app);
@@ -55,7 +60,7 @@ const CHAINS = {
   arbitrum: [process.env.ARBITRUM_NODE_1, process.env.ARBITRUM_NODE_2].filter(Boolean),
 };
 
-const TIER_LIMITS = { free: 20, pro: 100 };
+const TIER_LIMITS = { free: 20, dev: 60, pro: 200, team: 500 };
 const BLOCKED_METHODS = ["eth_sendRawTransaction", "eth_sign", "personal_sign"];
 const CACHEABLE_METHODS = ["eth_blockNumber", "eth_chainId", "eth_gasPrice"];
 const CACHE_TTL = parseInt(process.env.CACHE_TTL_SECONDS) || 30;
@@ -229,6 +234,124 @@ app.get("/logs", authMiddleware, async (req, res) => {
   if (chain) query = query.eq("chain", chain);
   const { data } = await query;
   res.json(data || []);
+});
+
+// ─── Billing routes ──────────────────────────────────────────────────────────
+const requireStripe = (req, res, next) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured. Add STRIPE_SECRET_KEY to .env' });
+  next();
+};
+
+app.post("/billing/create-checkout", authMiddleware, requireStripe, async (req, res) => {
+  const { plan } = req.body;
+  const priceIds = {
+    dev: process.env.STRIPE_PRICE_DEV,
+    pro: process.env.STRIPE_PRICE_PRO,
+    team: process.env.STRIPE_PRICE_TEAM,
+  };
+  if (!priceIds[plan]) return res.status(400).json({ error: "Invalid plan" });
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      payment_method_types: ["card"],
+      line_items: [{ price: priceIds[plan], quantity: 1 }],
+      success_url: `${process.env.FRONTEND_URL}/dashboard?payment=success`,
+      cancel_url: `${process.env.FRONTEND_URL}/dashboard?payment=cancelled`,
+      customer_email: req.user.email,
+      metadata: { user_id: req.user.id, plan },
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/billing/create-portal", authMiddleware, requireStripe, async (req, res) => {
+  try {
+    const { data } = await supabase
+      .from("subscriptions")
+      .select("stripe_customer_id")
+      .eq("user_id", req.user.id)
+      .single();
+    if (!data?.stripe_customer_id) return res.status(404).json({ error: "No subscription found" });
+    const session = await stripe.billingPortal.sessions.create({
+      customer: data.stripe_customer_id,
+      return_url: `${process.env.FRONTEND_URL}/dashboard`,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  const sig = req.headers["stripe-signature"];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  const obj = event.data.object;
+
+  if (event.type === "checkout.session.completed") {
+    const subscription = await stripe.subscriptions.retrieve(obj.subscription);
+    await supabase.from("subscriptions").upsert({
+      user_id: obj.metadata.user_id,
+      stripe_customer_id: obj.customer,
+      stripe_subscription_id: obj.subscription,
+      plan: obj.metadata.plan,
+      status: "active",
+      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+    await supabase.from("api_keys")
+      .update({ tier: obj.metadata.plan })
+      .eq("user_id", obj.metadata.user_id);
+  }
+
+  if (event.type === "customer.subscription.deleted") {
+    await supabase.from("subscriptions")
+      .update({ plan: "free", status: "cancelled", updated_at: new Date().toISOString() })
+      .eq("stripe_subscription_id", obj.id);
+    await supabase.from("api_keys")
+      .update({ tier: "free" })
+      .eq("stripe_customer_id", obj.customer);
+  }
+
+  if (event.type === "customer.subscription.updated") {
+    const planMap = {
+      [process.env.STRIPE_PRICE_DEV]: "dev",
+      [process.env.STRIPE_PRICE_PRO]: "pro",
+      [process.env.STRIPE_PRICE_TEAM]: "team",
+    };
+    const newPlan = planMap[obj.items.data[0].price.id] || "free";
+    await supabase.from("subscriptions")
+      .update({ plan: newPlan, updated_at: new Date().toISOString() })
+      .eq("stripe_subscription_id", obj.id);
+    await supabase.from("api_keys")
+      .update({ tier: newPlan })
+      .eq("stripe_subscription_id", obj.id);
+  }
+
+  if (event.type === "invoice.payment_failed") {
+    await supabase.from("api_keys")
+      .update({ is_active: false })
+      .eq("stripe_customer_id", obj.customer);
+  }
+
+  res.json({ received: true });
+});
+
+app.get("/billing/status", authMiddleware, async (req, res) => {
+  const { data } = await supabase
+    .from("subscriptions")
+    .select("plan, status, current_period_end")
+    .eq("user_id", req.user.id)
+    .single();
+  res.json(data || { plan: "free", status: "active", current_period_end: null });
 });
 
 // ─── Cache clear (JWT protected) ──────────────────────────────────────────────

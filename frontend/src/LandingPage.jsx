@@ -1,12 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Zap, Activity, Check, ArrowRight, Gauge, Lock, Terminal, Copy, CheckCircle2, Download, Code2 } from 'lucide-react';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { useGSAP } from '@gsap/react';
-import { initScrollAnimations } from './animations/scrollAnimations';
-
-gsap.registerPlugin(ScrollTrigger);
 
 const CLI_STEPS = [
   { type: 'cmd',    text: 'npm install -g rpcforge-cli' },
@@ -124,14 +118,9 @@ function CliTerminal() {
 }
 
 export default function LandingPage() {
-  const containerRef = useRef(null);
   const [demoResponse, setDemoResponse] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  useGSAP(() => {
-    initScrollAnimations();
-  }, { scope: containerRef });
 
   const runDemo = async () => {
     setDemoLoading(true);
@@ -160,7 +149,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-primary/30 antialiased overflow-x-hidden">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-primary/30 antialiased overflow-x-hidden">
       {/* Navbar */}
       <nav className="h-16 border-b border-zinc-800/50 bg-zinc-950/80 backdrop-blur-xl sticky top-0 z-50 px-6 md:px-8 flex items-center justify-between transition-all duration-300">
         <div className="flex items-center gap-3">
@@ -190,7 +179,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center max-w-4xl mx-auto">
             {/* Badge */}
-            <div className="hero-badge inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary/10 to-indigo-500/10 border border-primary/20 rounded-full mb-6 backdrop-blur-sm">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary/10 to-indigo-500/10 border border-primary/20 rounded-full mb-6 backdrop-blur-sm">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
@@ -200,34 +189,34 @@ export default function LandingPage() {
             
             {/* Headline */}
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-tight mb-6">
-              <span className="hero-word inline-block text-white">Enterprise</span>{' '}
-              <span className="hero-word inline-block">
+              <span className="inline-block text-white">Enterprise</span>{' '}
+              <span className="inline-block">
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-indigo-400 to-purple-500 animate-gradient">
                   RPC Gateway
                 </span>
               </span>
               <br />
-              <span className="hero-word inline-block text-white">You Control</span>
+              <span className="inline-block text-white">You Control</span>
             </h1>
             
-            <p className="hero-sub text-base md:text-lg text-zinc-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-base md:text-lg text-zinc-400 mb-10 max-w-2xl mx-auto leading-relaxed">
               Self-hosted Ethereum infrastructure with unlimited requests, real-time monitoring, and zero vendor lock-in
             </p>
             
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
-              <Link to="/signup" className="hero-cta group w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-white bg-gradient-to-r from-primary to-indigo-500 hover:from-primary/90 hover:to-indigo-500/90 rounded-xl transition-all duration-200 shadow-lg shadow-primary/30 flex items-center justify-center gap-2">
+              <Link to="/signup" className="group w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-white bg-gradient-to-r from-primary to-indigo-500 hover:from-primary/90 hover:to-indigo-500/90 rounded-xl transition-all duration-200 shadow-lg shadow-primary/30 flex items-center justify-center gap-2">
                 Get Started Free
                 <ArrowRight className="size-5 group-hover:translate-x-1 transition-transform" />
               </Link>
-              <a href="#pricing" className="hero-cta group w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-zinc-300 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl transition-all duration-200 flex items-center justify-center gap-2">
+              <a href="#pricing" className="group w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-zinc-300 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl transition-all duration-200 flex items-center justify-center gap-2">
                 View Pricing
               </a>
             </div>
           </div>
 
           {/* Code Preview */}
-          <div className="hero-terminal max-w-3xl mx-auto relative mt-12">
+          <div className="max-w-3xl mx-auto relative mt-12">
             <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-indigo-500/20 blur-3xl -z-10" />
             
             <div className="bg-zinc-900/90 backdrop-blur-xl rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl">
@@ -255,9 +244,9 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Animated Glow Orbs */}
-        <div className="glow-orb absolute top-20 left-0 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[120px] pointer-events-none -z-10" />
-        <div className="glow-orb absolute bottom-20 right-0 w-[500px] h-[500px] bg-indigo-500/20 rounded-full blur-[120px] pointer-events-none -z-10" />
+        {/* Static Glow Orbs - no animation for performance */}
+        <div className="absolute top-20 left-0 w-[400px] h-[400px] bg-primary/10 rounded-full blur-[100px] pointer-events-none -z-10" />
+        <div className="absolute bottom-20 right-0 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none -z-10" />
       </section>
 
       {/* How It Works Section */}

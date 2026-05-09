@@ -128,13 +128,13 @@ export default function LandingPage() {
     try {
       const res = await fetch('https://rpcforge.onrender.com/eth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': 'demo' },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': import.meta.env.VITE_DEMO_API_KEY || '' },
         body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 })
       });
       const data = await res.json();
       setDemoResponse(data);
     } catch (err) {
-      setDemoResponse({ error: err.message });
+      setDemoResponse({ error: 'Could not reach server. Try again.' });
     }
     setDemoLoading(false);
   };

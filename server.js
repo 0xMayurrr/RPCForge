@@ -85,8 +85,16 @@ function broadcast(data) {
   });
 }
 
-wss.on("connection", (ws) => {
-  ws.send(JSON.stringify({ type: "init", logs: recentLogs.slice(0, 50) }));
+wss.on("connection", (ws, req) => {
+  // Auth: require token query param
+  const url = new URL(req.url, 'http://localhost');
+  const token = url.searchParams.get('token');
+  if (!token) { ws.close(1008, 'Unauthorized'); return; }
+
+  supabase.auth.getUser(token).then(({ data: { user }, error }) => {
+    if (error || !user) { ws.close(1008, 'Unauthorized'); return; }
+    ws.send(JSON.stringify({ type: "init", logs: recentLogs.slice(0, 50) }));
+  });
 });
 
 // ─── Supabase JWT auth middleware (replaces x-admin-secret) ──────────────────
@@ -368,9 +376,14 @@ app.post("/:chain", async (req, res) => {
   if (!CHAINS[chain]) return res.status(400).json({ error: `Unsupported chain: ${chain}. Available: ${Object.keys(CHAINS).join(", ")}` });
 
   const userKey = req.headers["x-api-key"];
-  const method = req.body.method;
+  const { method, jsonrpc, id } = req.body || {};
 
   if (!userKey) return res.status(403).json({ error: "Missing API Key" });
+
+  // Validate JSON-RPC body
+  if (!method || typeof method !== 'string' || jsonrpc !== '2.0') {
+    return res.status(400).json({ error: "Invalid JSON-RPC request" });
+  }
 
   // Validate key against Supabase
   const { data: keyRecord, error: keyError } = await supabase
@@ -466,6 +479,12 @@ app.post("/:chain", async (req, res) => {
     console.error(`[RPCForge] RPC Error on ${chain}:`, err.message);
     res.status(500).json({ error: "Error forwarding request" });
   }
+});
+
+// ─── Global error handler ─────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('[RPCForge] Unhandled error:', err.message);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────

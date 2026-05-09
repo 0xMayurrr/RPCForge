@@ -41,7 +41,7 @@ import { useNavigate } from 'react-router-dom';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://rpcforge-production.up.railway.app';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://rpcforge.onrender.com';
 
 const getAuthHeaders = async () => {
   const { data: { session } } = await supabase.auth.getSession();
@@ -472,26 +472,29 @@ export default function Dashboard() {
 
   // ── WebSocket ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || !user) return;
     let cancelled = false;
     function connect() {
       if (cancelled) return;
-      const wsUrl = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://');
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-      ws.onopen = () => { if (!cancelled) setWsStatus('live'); };
-      ws.onclose = () => { if (!cancelled) { setWsStatus('reconnecting'); setTimeout(connect, 3000); } };
-      ws.onerror = () => { if (!cancelled) ws.close(); };
-      ws.onmessage = (e) => {
-        if (cancelled) return;
-        const data = JSON.parse(e.data);
-        if (data.type === 'init') setLogs(data.logs);
-        else setLogs(prev => [data, ...prev].slice(0, 500));
-      };
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session || cancelled) return;
+        const wsUrl = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+        const ws = new WebSocket(`${wsUrl}?token=${session.access_token}`);
+        wsRef.current = ws;
+        ws.onopen = () => { if (!cancelled) setWsStatus('live'); };
+        ws.onclose = () => { if (!cancelled) { setWsStatus('reconnecting'); setTimeout(connect, 3000); } };
+        ws.onerror = () => { if (!cancelled) ws.close(); };
+        ws.onmessage = (e) => {
+          if (cancelled) return;
+          const data = JSON.parse(e.data);
+          if (data.type === 'init') setLogs(data.logs);
+          else setLogs(prev => [data, ...prev].slice(0, 500));
+        };
+      });
     }
     const t = setTimeout(connect, 50);
     return () => { cancelled = true; clearTimeout(t); wsRef.current?.close(); wsRef.current = null; };
-  }, [authLoading]);
+  }, [authLoading, user]);
 
   // ── Visuals ─────────────────────────────────────────────────────────────
   const timeSeriesData = useMemo(() => {

@@ -4,16 +4,52 @@ import inquirer from 'inquirer';
 import ora from 'ora';
 import axios from 'axios';
 
-const BASE_URL = 'https://rpcforge-production.up.railway.app';
+const BASE_URL = 'https://rpcforge.onrender.com';
+const SUPABASE_URL = 'https://mbnsdxrhfvidrzqncyob.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ibnNkeHJoZnZpZHJ6cW5jeW9iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MTU4MzgsImV4cCI6MjA4OTQ5MTgzOH0.Ry6DAqHJFAFMFBFBFBFBFBFBFBFBFBFBFBFBFBFBFBF';
 const CHAINS = ['eth', 'polygon', 'bsc', 'arbitrum', 'sepolia'];
-const getAdmin = async () => {
-  const secret = process.env.RPCFORGE_ADMIN_SECRET ||
-    (await inquirer.prompt([{ type: 'password', name: 's', message: 'Admin secret:' }])).s;
-  return { headers: { 'x-admin-secret': secret } };
-};
 
-const command = process.argv[2];
+// ── Auth ──────────────────────────────────────────────────────────────────────
+let _token = null;
 
+async function getToken() {
+  if (_token) return _token;
+
+  // check env first
+  if (process.env.RPCFORGE_TOKEN) {
+    _token = process.env.RPCFORGE_TOKEN;
+    return _token;
+  }
+
+  console.log(chalk.gray('\n  Login to your RPCForge account\n'));
+  const { email, password } = await inquirer.prompt([
+    { type: 'input',    name: 'email',    message: 'Email:',    validate: v => v.includes('@') || 'Enter a valid email' },
+    { type: 'password', name: 'password', message: 'Password:', validate: v => v.length >= 6 || 'Min 6 characters' },
+  ]);
+
+  const spinner = ora('Signing in...').start();
+  try {
+    const { data } = await axios.post(
+      `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
+      { email, password },
+      { headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
+    );
+    _token = data.access_token;
+    spinner.succeed(chalk.green('Signed in!'));
+    console.log(chalk.gray(`  Tip: set RPCFORGE_TOKEN=${_token.slice(0, 20)}... to skip login next time\n`));
+    return _token;
+  } catch (err) {
+    spinner.fail(chalk.red('Login failed: ' + (err.response?.data?.error_description || err.message)));
+    process.exit(1);
+  }
+}
+
+async function authHeaders() {
+  const token = await getToken();
+  return { headers: { Authorization: `Bearer ${token}` } };
+}
+
+// ── Banner ────────────────────────────────────────────────────────────────────
 const banner = () => {
   console.log(chalk.hex('#6467f2').bold(`
   ██████╗ ██████╗  ██████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
@@ -26,51 +62,40 @@ const banner = () => {
   console.log(chalk.gray('  Your Personal Ethereum RPC Provider\n'));
 };
 
-// ── INIT ─────────────────────────────────────────────────────────────────────
+// ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
   banner();
   console.log(chalk.bold.white('🔧  Setting up your RPCForge endpoint\n'));
 
-  const { apiKey, chain } = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'apiKey',
-      message: 'Enter your API key (or press Enter to generate one):',
-    },
-    {
-      type: 'list',
-      name: 'chain',
-      message: 'Select chain:',
-      choices: [
-        { name: 'Ethereum Mainnet   (eth)',      value: 'eth' },
-        { name: 'Polygon Mainnet    (polygon)',   value: 'polygon' },
-        { name: 'BSC Mainnet        (bsc)',       value: 'bsc' },
-        { name: 'Arbitrum Mainnet   (arbitrum)',  value: 'arbitrum' },
-        { name: 'Ethereum Sepolia   (sepolia)',   value: 'sepolia' },
-      ]
-    }
-  ]);
+  const { chain } = await inquirer.prompt([{
+    type: 'list',
+    name: 'chain',
+    message: 'Select chain:',
+    choices: [
+      { name: 'Ethereum Mainnet   (eth)',      value: 'eth' },
+      { name: 'Polygon Mainnet    (polygon)',   value: 'polygon' },
+      { name: 'BSC Mainnet        (bsc)',       value: 'bsc' },
+      { name: 'Arbitrum Mainnet   (arbitrum)',  value: 'arbitrum' },
+      { name: 'Ethereum Sepolia   (sepolia)',   value: 'sepolia' },
+    ]
+  }]);
 
-  const spinner = ora('Connecting to RPCForge...').start();
+  const auth = await authHeaders();
+  const spinner = ora('Fetching your API keys...').start();
 
   try {
-    let key = apiKey.trim();
+    const { data: keys } = await axios.get(`${BASE_URL}/keys`, auth);
+    spinner.stop();
 
-    if (!key) {
-      const admin = await getAdmin();
-      const { data } = await axios.post(`${BASE_URL}/keys`, { tier: 'free' }, admin);
+    let key;
+    if (keys.length === 0) {
+      const creating = ora('No keys found — creating a free key...').start();
+      const { data } = await axios.post(`${BASE_URL}/keys`, { tier: 'free' }, auth);
       key = data.apiKey;
-      spinner.succeed(chalk.green(`New free key generated: ${chalk.bold(key)}`));
+      creating.succeed(chalk.green(`Free key created: ${chalk.bold(key)}`));
     } else {
-      // validate key
-      const admin = await getAdmin();
-      const { data } = await axios.get(`${BASE_URL}/keys`, admin);
-      const found = data.find(k => k.apiKey === key);
-      if (!found) {
-        spinner.fail(chalk.red('API key not found. Run `rpcforge keys create` to make one.'));
-        process.exit(1);
-      }
-      spinner.succeed(chalk.green(`Key validated — Tier: ${chalk.bold(found.tier.toUpperCase())}`));
+      key = keys[0].apiKey;
+      console.log(chalk.green(`  Using key: ${chalk.bold(key)} (${keys[0].tier.toUpperCase()})`));
     }
 
     const endpoint = `${BASE_URL}/${chain}`;
@@ -93,10 +118,8 @@ async function init() {
     console.log(chalk.cyan(`      -d '{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}'\n`));
     console.log(chalk.gray('  hardhat.config.js:'));
     console.log(chalk.cyan(`    networks: { ${chain}: { url: "${endpoint}", headers: { "x-api-key": "${key}" } } }\n`));
-
-  } catch {
-    spinner.fail(chalk.red('Could not connect to RPCForge server. Is it running?'));
-    console.log(chalk.gray('  Start it with: ') + chalk.white('node server.js'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed: ' + (err.response?.data?.error || err.message)));
     process.exit(1);
   }
 }
@@ -104,86 +127,69 @@ async function init() {
 // ── TEST ──────────────────────────────────────────────────────────────────────
 async function test() {
   const { apiKey, chain } = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'apiKey',
-      message: 'API key to test:',
-      validate: v => v.trim() ? true : 'API key is required'
-    },
-    {
-      type: 'list',
-      name: 'chain',
-      message: 'Select chain:',
-      choices: CHAINS
-    }
+    { type: 'input', name: 'apiKey', message: 'API key to test:', validate: v => v.trim() ? true : 'Required' },
+    { type: 'list',  name: 'chain',  message: 'Select chain:', choices: CHAINS },
   ]);
 
   const spinner = ora(`Sending test request to ${chain}...`).start();
   try {
-    const { data } = await axios.post(`${BASE_URL}/${chain}`, {
-      jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1
-    }, { headers: { 'x-api-key': apiKey.trim() } });
-
+    const { data } = await axios.post(
+      `${BASE_URL}/${chain}`,
+      { jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 },
+      { headers: { 'x-api-key': apiKey.trim() } }
+    );
     if (data.result) {
-      const block = parseInt(data.result, 16);
-      spinner.succeed(chalk.green(`Success! Latest block: ${chalk.bold(block)}`));
+      spinner.succeed(chalk.green(`Success! Latest block: ${chalk.bold(parseInt(data.result, 16))}`));
     } else {
-      spinner.fail(chalk.red(`RPC error: ${data.error?.message || 'Unknown error'}`));
+      spinner.fail(chalk.red(`RPC error: ${data.error?.message || 'Unknown'}`));
     }
   } catch (err) {
-    spinner.fail(chalk.red(`Request failed: ${err.response?.data?.error || err.message}`));
+    spinner.fail(chalk.red(`Failed: ${err.response?.data?.error || err.message}`));
   }
 }
 
 // ── KEYS ──────────────────────────────────────────────────────────────────────
 async function keys() {
   const sub = process.argv[3];
+  const auth = await authHeaders();
 
   if (sub === 'create') {
     const { tier } = await inquirer.prompt([{
-      type: 'list',
-      name: 'tier',
-      message: 'Select tier:',
-      choices: ['free', 'pro']
+      type: 'list', name: 'tier', message: 'Select tier:',
+      choices: ['free', 'dev', 'pro', 'team']
     }]);
     const spinner = ora('Creating key...').start();
     try {
-      const admin = await getAdmin();
-      const { data } = await axios.post(`${BASE_URL}/keys`, { tier }, admin);
-      spinner.succeed(chalk.green(`Key created!`));
+      const { data } = await axios.post(`${BASE_URL}/keys`, { tier }, auth);
+      spinner.succeed(chalk.green('Key created!'));
       console.log(chalk.gray('\n  API Key: ') + chalk.yellow.bold(data.apiKey));
       console.log(chalk.gray('  Tier:    ') + chalk.white(data.tier.toUpperCase()) + '\n');
-    } catch {
-      spinner.fail(chalk.red('Failed to create key. Is the server running?'));
+    } catch (err) {
+      spinner.fail(chalk.red('Failed: ' + (err.response?.data?.error || err.message)));
     }
     return;
   }
 
   if (sub === 'revoke') {
     const { apiKey } = await inquirer.prompt([{
-      type: 'input',
-      name: 'apiKey',
-      message: 'API key to revoke:',
-      validate: v => v.trim() ? true : 'Required'
+      type: 'input', name: 'apiKey', message: 'API key to revoke:', validate: v => v.trim() ? true : 'Required'
     }]);
     const spinner = ora('Revoking...').start();
     try {
-      const admin = await getAdmin();
-      await axios.delete(`${BASE_URL}/keys/${apiKey.trim()}`, admin);
+      await axios.delete(`${BASE_URL}/keys/${apiKey.trim()}`, auth);
       spinner.succeed(chalk.green('Key revoked.'));
-    } catch {
-      spinner.fail(chalk.red('Key not found or server unreachable.'));
+    } catch (err) {
+      spinner.fail(chalk.red('Failed: ' + (err.response?.data?.error || err.message)));
     }
     return;
   }
 
-  // list keys
+  // list
   const spinner = ora('Fetching keys...').start();
   try {
-    const admin = await getAdmin();
-    const { data } = await axios.get(`${BASE_URL}/keys`, admin);
+    const { data } = await axios.get(`${BASE_URL}/keys`, auth);
     spinner.stop();
-    if (!data.length) { console.log(chalk.gray('  No keys found.')); return; }
+    if (!data.length) { console.log(chalk.gray('\n  No keys found. Run `rpcforge keys create`\n')); return; }
 
     console.log('\n' + chalk.bold.white('  API Key                  Tier   Requests  Errors'));
     console.log(chalk.gray('  ' + '─'.repeat(52)));
@@ -195,17 +201,17 @@ async function keys() {
       );
     });
     console.log();
-  } catch {
-    spinner.fail(chalk.red('Could not fetch keys. Is the server running?'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed: ' + (err.response?.data?.error || err.message)));
   }
 }
 
 // ── STATS ─────────────────────────────────────────────────────────────────────
 async function stats() {
+  const auth = await authHeaders();
   const spinner = ora('Fetching stats...').start();
   try {
-    const admin = await getAdmin();
-    const { data } = await axios.get(`${BASE_URL}/stats`, admin);
+    const { data } = await axios.get(`${BASE_URL}/stats`, auth);
     spinner.stop();
 
     console.log('\n' + chalk.bold.white('  📊 RPCForge Stats\n'));
@@ -213,15 +219,15 @@ async function stats() {
     console.log(chalk.gray('  Total Errors   : ') + (data.totalErrors > 0 ? chalk.red.bold(data.totalErrors) : chalk.green.bold(data.totalErrors)));
     console.log(chalk.gray('  Active Keys    : ') + chalk.white.bold(data.users.length));
 
-    if (data.mostUsedMethods.length) {
+    if (data.mostUsedMethods?.length) {
       console.log('\n' + chalk.bold.white('  Top Methods:'));
       data.mostUsedMethods.slice(0, 5).forEach((m, i) => {
         console.log(chalk.gray(`  ${i + 1}. `) + chalk.cyan(m.name.padEnd(30)) + chalk.white(m.count + ' calls'));
       });
     }
     console.log();
-  } catch {
-    spinner.fail(chalk.red('Could not fetch stats. Is the server running?'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed: ' + (err.response?.data?.error || err.message)));
   }
 }
 
@@ -229,22 +235,21 @@ async function stats() {
 function help() {
   banner();
   console.log(chalk.bold.white('  Commands:\n'));
-  const cmds = [
-    ['rpcforge init',          'Setup your endpoint & get usage examples'],
-    ['rpcforge test',          'Send a test eth_blockNumber request'],
-    ['rpcforge keys',          'List all API keys'],
-    ['rpcforge keys create',   'Create a new API key'],
-    ['rpcforge keys revoke',   'Revoke an API key'],
-    ['rpcforge stats',         'Show request stats'],
-  ];
-  cmds.forEach(([cmd, desc]) => {
+  [
+    ['rpcforge init',         'Setup your endpoint & get usage examples'],
+    ['rpcforge test',         'Send a test eth_blockNumber request'],
+    ['rpcforge keys',         'List your API keys'],
+    ['rpcforge keys create',  'Create a new API key'],
+    ['rpcforge keys revoke',  'Revoke an API key'],
+    ['rpcforge stats',        'Show your request stats'],
+  ].forEach(([cmd, desc]) => {
     console.log('  ' + chalk.hex('#6467f2').bold(cmd.padEnd(30)) + chalk.gray(desc));
   });
-  console.log();
+  console.log('\n' + chalk.gray('  Set RPCFORGE_TOKEN=<jwt> to skip login prompts\n'));
 }
 
 // ── ROUTER ────────────────────────────────────────────────────────────────────
-switch (command) {
+switch (process.argv[2]) {
   case 'init':   init();  break;
   case 'test':   test();  break;
   case 'keys':   keys();  break;

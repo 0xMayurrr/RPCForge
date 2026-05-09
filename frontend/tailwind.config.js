@@ -9,30 +9,22 @@ export default {
     extend: {
       colors: {
         "primary": "#6467f2",
-        "primary-dark": "#4f52d4",
-        "background-light": "#f6f6f8",
-        "background-dark": "#0a0a0f",
-        "obsidian": "#11111e",
-        "border-subtle": "rgba(100, 103, 242, 0.15)"
+        "background-dark": "#09090b",
+        "obsidian": "#0c0c0f",
+        "border-subtle": "rgba(255,255,255,0.06)",
+        "zinc-950": "#09090b",
+        "zinc-900": "#18181b",
+        "zinc-800": "#27272a",
+        "zinc-700": "#3f3f46",
+        "zinc-400": "#a1a1aa",
+        "zinc-100": "#fafafa",
       },
       fontFamily: {
-        "display": ["Inter", "sans-serif"],
+        "sans": ["Inter", "sans-serif"],
         "mono": ["JetBrains Mono", "monospace"]
       },
-      borderRadius: {
-        "DEFAULT": "0.125rem",
-        "lg": "0.25rem",
-        "xl": "0.5rem",
-        "full": "0.75rem"
-      },
       animation: {
-        "fade-in": "fadeIn 0.3s ease-in-out",
-      },
-      keyframes: {
-        fadeIn: {
-          "0%": { opacity: "0", transform: "translateY(4px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
-        },
+        "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
       },
     },
   },

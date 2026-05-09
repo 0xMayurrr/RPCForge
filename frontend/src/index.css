@@ -6,7 +6,7 @@
 
 @layer base {
   body {
-    @apply font-display;
+    @apply font-sans;
   }
 }
 
@@ -25,3 +25,70 @@
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #323367; border-radius: 10px; }
+
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* GSAP Animation Utilities */
+.gsap-hidden {
+  opacity: 0;
+}
+
+.typewriter-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: #6467f2;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 0.6s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.pricing-card {
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gsap-hidden { opacity: 1 !important; }
+  .typewriter-cursor { animation: none; }
+}
+
+/* Logo Animation */
+.logo-icon {
+  animation: logoFloat 3s ease-in-out infinite;
+}
+
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+.logo-glow {
+  animation: logoPulse 2s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(100, 103, 242, 0.4); }
+  50% { box-shadow: 0 0 25px rgba(100, 103, 242, 0.6); }
+}
+
+
+/* Gradient Animation */
+@keyframes gradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient 3s ease infinite;
+}

@@ -1,4 +1,7 @@
 require("dotenv").config();
+// Force IPv4 — Node.js on Windows tries IPv6 (64:ff9b::) first and times out
+const { setDefaultResultOrder } = require("dns");
+setDefaultResultOrder("ipv4first");
 const express = require("express");
 const axios = require("axios");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");

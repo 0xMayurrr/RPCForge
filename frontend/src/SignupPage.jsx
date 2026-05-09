@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Layers, Loader2 } from 'lucide-react';
+import { Layers, Loader2, Mail, Lock, AlertCircle, ChevronLeft, ArrowRight } from 'lucide-react';
 import { supabase } from './supabase';
 
 export default function SignupPage() {
@@ -11,113 +11,168 @@ export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [authMethod, setAuthMethod] = useState(null);
   const [error, setError] = useState('');
   const [mode, setMode] = useState('signup'); // signup | login
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    setAuthMethod('email');
     setError('');
 
     try {
       if (mode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
+        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+        if (signUpError) throw signUpError;
 
-        // if email confirmation is required, session won't exist yet
         if (!data.session) {
-          setError('Check your email to confirm your account, then log in.');
+          setError('Verification email sent! Please check your inbox.');
           setIsLoading(false);
           setMode('login');
           return;
         }
 
-        const apiKey = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+        // Initialize user in our custom tables
+        const apiKey = 'rf_' + Math.random().toString(36).slice(2, 15) + Math.random().toString(36).slice(2, 15);
         await Promise.all([
           supabase.from('users').insert({ id: data.user.id, email, tier: plan, api_key: apiKey }),
           supabase.from('api_keys').insert({ user_id: data.user.id, key: apiKey, tier: plan }),
         ]);
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
       }
       navigate('/dashboard');
     } catch (err) {
-      const msg = err.message || '';
-      if (msg.toLowerCase().includes('invalid login')) setError('Wrong email or password.');
-      else if (msg.toLowerCase().includes('email not confirmed')) setError('Please confirm your email first, then log in.');
-      else setError(msg);
+      setError(err.message || 'Authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-
-
   return (
-    <div className="min-h-screen bg-background-dark flex flex-col justify-center items-center p-6 text-slate-100 font-display selection:bg-primary/30">
-      <Link to="/" className="flex items-center gap-3 mb-8 hover:opacity-80 transition-opacity">
-        <div className="size-8 bg-primary rounded flex items-center justify-center text-white shadow-[0_0_15px_rgba(100,103,242,0.4)]">
-          <Layers className="size-5" />
-        </div>
-        <span className="text-xl font-bold tracking-tight text-white">RPCForge</span>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-6 selection:bg-primary/30 relative overflow-hidden font-sans">
+      {/* Background Glows */}
+      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/20 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-indigo-500/10 blur-[120px] rounded-full pointer-events-none" />
+
+      {/* Back to Home */}
+      <Link to="/" className="absolute top-12 left-12 flex items-center gap-2 text-zinc-500 hover:text-zinc-100 transition-colors text-sm font-medium group">
+        <ChevronLeft className="size-4 group-hover:-translate-x-1 transition-transform" />
+        Back to home
       </Link>
 
-      <div className="w-full max-w-md bg-obsidian border border-border-subtle rounded-2xl p-8 shadow-2xl">
-        {/* Toggle signup/login */}
-        <div className="flex bg-white/5 rounded-lg p-1 mb-6">
-          <button onClick={() => setMode('signup')}
-            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${mode === 'signup' ? 'bg-primary text-white' : 'text-slate-400 hover:text-white'}`}>
-            Sign Up
-          </button>
-          <button onClick={() => setMode('login')}
-            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${mode === 'login' ? 'bg-primary text-white' : 'text-slate-400 hover:text-white'}`}>
-            Log In
-          </button>
+      <div className="w-full max-w-[440px] relative">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-10">
+          <div className="flex items-center gap-3 mb-2">
+            <img src="/logo.svg" alt="RPCForge" className="h-12 w-12" />
+            <span className="text-2xl font-extrabold tracking-tight text-zinc-100">RPC<span className="text-primary">Forge</span></span>
+          </div>
         </div>
 
-        <h1 className="text-2xl font-bold text-white mb-2 text-center">
-          {mode === 'signup' ? (plan === 'pro' ? 'Start your Pro Trial' : 'Create an account') : 'Welcome back'}
-        </h1>
-        <p className="text-sm text-slate-400 text-center mb-6">
-          {mode === 'signup' ? 'Get your free API key instantly.' : 'Log in to your RPCForge dashboard.'}
-        </p>
-
-        {error && (
-          <div className="mb-4 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-400">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Email</label>
-            <input
-              type="email" value={email} onChange={e => setEmail(e.target.value)}
-              disabled={isLoading} required placeholder="alice@example.com"
-              className="bg-background-dark border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-slate-600 disabled:opacity-50"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Password</label>
-            <input
-              type="password" value={password} onChange={e => setPassword(e.target.value)}
-              disabled={isLoading} required placeholder="••••••••"
-              className="bg-background-dark border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-slate-600 disabled:opacity-50"
-            />
+        {/* Card */}
+        <div className="bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 rounded-3xl p-8 md:p-10 shadow-2xl relative">
+          <div className="mb-8">
+            <h2 className="text-xl font-bold text-zinc-100 mb-2">
+              {mode === 'signup' ? 'Create an account' : 'Welcome back'}
+            </h2>
+            <p className="text-sm text-zinc-500 font-medium">
+              {mode === 'signup' 
+                ? 'Join 5,000+ developers scaling with RPCForge.' 
+                : 'Enter your credentials to access your dashboard.'}
+            </p>
           </div>
 
-          <button type="submit" disabled={isLoading}
-            className="w-full py-2.5 mt-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg shadow-[0_0_15px_rgba(100,103,242,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-            {isLoading && authMethod === 'email'
-              ? <><Loader2 className="size-4 animate-spin" /> {mode === 'signup' ? 'Creating account...' : 'Logging in...'}</>
-              : mode === 'signup' ? 'Create Account' : 'Log In'}
-          </button>
-        </form>
+          {/* Toggle */}
+          <div className="flex bg-zinc-950 rounded-xl p-1 mb-8 border border-zinc-800">
+            <button 
+              onClick={() => setMode('signup')}
+              className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all ${
+                mode === 'signup' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              Sign Up
+            </button>
+            <button 
+              onClick={() => setMode('login')}
+              className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all ${
+                mode === 'login' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              Log In
+            </button>
+          </div>
 
+          {error && (
+            <div className="mb-6 flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-xs font-medium text-red-400 animate-in fade-in slide-in-from-top-1">
+              <AlertCircle className="size-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.1em] ml-1">Email Address</label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-600" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  required
+                  disabled={isLoading}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-11 pr-4 py-3.5 text-sm text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all disabled:opacity-50"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center ml-1">
+                <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.1em]">Password</label>
+                {mode === 'login' && (
+                  <button type="button" className="text-[11px] font-bold text-primary hover:text-primary-dark transition-colors">
+                    Forgot?
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-600" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  disabled={isLoading}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-11 pr-4 py-3.5 text-sm text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all disabled:opacity-50"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-4 mt-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-[0_0_20px_rgba(100,103,242,0.3)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed group"
+            >
+              {isLoading ? (
+                <Loader2 className="size-5 animate-spin" />
+              ) : (
+                <>
+                  {mode === 'signup' ? 'Create Account' : 'Sign In'}
+                  <ArrowRight className="size-4 group-hover:translate-x-0.5 transition-transform" />
+                </>
+              )}
+            </button>
+          </form>
+
+          <p className="mt-8 text-center text-xs text-zinc-600 font-medium">
+            By continuing, you agree to our{' '}
+            <a href="#" className="text-zinc-400 hover:text-white underline underline-offset-4">Terms of Service</a>
+            {' '}and{' '}
+            <a href="#" className="text-zinc-400 hover:text-white underline underline-offset-4">Privacy Policy</a>.
+          </p>
+        </div>
       </div>
     </div>
   );

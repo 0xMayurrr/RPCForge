@@ -2,6 +2,18 @@
 
 <br />
 
+<img src="./frontend/public/logo.svg" width="80" height="80" alt="RPCForge Logo" />
+
+<br /><br />
+
+<h1>RPCForge</h1>
+
+<p><strong>The RPC Gateway Built for Web3 Developers</strong></p>
+
+<p>One endpoint. Five chains. Real-time dashboard. No per-request fees.</p>
+
+<br />
+
 <img src="https://img.shields.io/badge/RPCForge-Live-6467f2?style=for-the-badge&logo=ethereum&logoColor=white" />
 <img src="https://img.shields.io/badge/Status-Production-22c55e?style=for-the-badge" />
 <img src="https://img.shields.io/badge/Chains-5-6467f2?style=for-the-badge" />
@@ -9,21 +21,15 @@
 
 <br /><br />
 
-<h1>⚡ RPCForge</h1>
-
-<h3>The RPC Gateway Built for Web3 Developers</h3>
-
-<p>One endpoint. Five chains. Real-time dashboard. No per-request fees.</p>
-
-<br />
-
 <a href="https://rpc-forge.vercel.app"><img src="https://img.shields.io/badge/Get%20Started%20Free-6467f2?style=for-the-badge" /></a>
 &nbsp;
 <a href="https://rpc-forge.vercel.app/dashboard"><img src="https://img.shields.io/badge/Live%20Dashboard-18181b?style=for-the-badge" /></a>
 &nbsp;
-<a href="https://www.producthunt.com/products/rpcforge-own-your-rpc"><img src="https://img.shields.io/badge/Product%20Hunt-FF6154?style=for-the-badge&logo=producthunt&logoColor=white" /></a>
+<a href="https://www.producthunt.com/products/rpcforge-own-your-rpc"><img src="https://img.shields.io/badge/Product%20Hunt-%231%20Launch-FF6154?style=for-the-badge&logo=producthunt&logoColor=white" /></a>
 
 <br /><br />
+
+> 🚀 **Featured on Product Hunt** — [RPCForge: Own Your RPC](https://www.producthunt.com/products/rpcforge-own-your-rpc) — our first ever launch!
 
 </div>
 
@@ -69,7 +75,7 @@ RPCForge gives you everything in one place:
 ## Features
 
 ### 🌐 Multi-Chain Gateway
-One API key works across all supported chains. No separate accounts, no separate billing.
+One API key works across all supported chains.
 
 | Chain | Endpoint |
 |---|---|
@@ -104,7 +110,7 @@ One API key works across all supported chains. No separate accounts, no separate
 - **Upstash Redis** — distributed cache with in-memory fallback
 
 ### 🧪 RPC Playground
-Test any RPC method directly from your browser — no curl, no code. Pick a chain, pick a method, hit send.
+Test any RPC method directly from your browser — no curl, no code.
 
 ### 💳 Stripe Billing
 Full subscription management with Stripe Checkout and Customer Portal.
@@ -117,7 +123,7 @@ Full subscription management with Stripe Checkout and Customer Portal.
 Go to [rpc-forge.vercel.app](https://rpc-forge.vercel.app) and create a free account.
 
 ### 2. Get your API key
-From the dashboard → API Keys → New Free Key.
+Dashboard → API Keys → New Free Key.
 
 ### 3. Make your first request
 
@@ -196,7 +202,29 @@ The fastest way to manage RPCForge from your terminal.
 
 ```bash
 npm install -g rpcforge-cli
-rpcforge init
+```
+
+When you run `rpcforge` you'll see:
+
+```
+  ██████╗ ██████╗  ██████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
+  ██╔══██╗██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
+  ██████╔╝██████╔╝██║     █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
+  ██╔══██╗██╔═══╝ ██║     ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
+  ██║  ██║██║     ╚██████╗██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
+  ╚═╝  ╚═╝╚═╝      ╚═════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+
+  ⚡ RPCForge CLI v1.0.2 — Multi-chain RPC Gateway
+
+  Usage: rpcforge <command>
+
+  Commands:
+    init          Configure your endpoint and get integration examples
+    test          Send a live test request and verify your setup
+    keys          List all your API keys
+    keys create   Create a new API key
+    keys revoke   Revoke an API key
+    stats         View total requests, errors, and top methods
 ```
 
 | Command | Description |
@@ -294,8 +322,7 @@ git clone https://github.com/0xMayurrr/RPCForge.git
 cd RPCForge
 
 # Backend
-npm install
-node server.js
+npm install && node server.js
 
 # Frontend
 cd frontend && npm install && npm run dev
